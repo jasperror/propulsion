@@ -15,6 +15,8 @@ BPR = 0.57; % Bypass ratio, []
 FAN_pr = 1.75; % Fan pressure ratio, []
 HPC_pr = 12.8; % HPC pressure ratio, []
 LHV = 43150; % Fuel heating value, kJ/kg
+T_a = 288.15; % Design point ambient temperature, K
+p_a = 101.325e3; % Ambient pressure, Pa
 
 % Flow & Geometric Assumptions
 M_1 = 0.5; % Fan inlet mach number, []
@@ -24,20 +26,20 @@ d_10 = 0.78; % Nozzle exit diameter, m
 M_7 = 0.5; % Turbine exit mach number, []
 
 % Component Efficiencies
-eta.BRN = 0.99; % Burner efficiency, []
+eta.FAN = 0.89; % Fan efficiency, []
 eta.LPC = 0.88; % LPC efficiency, []
 eta.HPC = 0.86; % HPC efficiency, []
-eta.FAN = 0.89; % Fan efficiency, []
-eta.LPT = 0.91; % LPT efficiency, []
+eta.BRN = 0.99; % Burner efficiency, []
 eta.HPT = 0.89; % HPT efficiency, []
-eta.SFT = 0.99; % Shaft efficiency, []
+eta.LPT = 0.91; % LPT efficiency, []
 eta.NOZ = 0.98; % Nozzle efficiency, []
+eta.SFT = 0.99; % Shaft efficiency, []
 
 % Stagnation Pressure Ratios
 spr.INT = 0.99; % Intake SPR, []
 spr.LPC = 0.99; % LPC duct SPR, []
 spr.BRN = 0.94; % Burner SPR, []
-spr.MXR = 0.97; % Mixter SPR, []
+spr.MXR = 0.97; % Mixer SPR, []
 spr.BPD = 0.96; % Bypass duct SPR, []
 spr.HPC = 0.99; % HPC duct SPR, []
 spr.ABR = 0.98; % Afterburner duct SPR, []
@@ -117,3 +119,6 @@ All other design point parameters, efficiencies, and pressure-loss
 assumptions are identical to those listed for dry operations.
 %}
 
+%{
+Fuel type: Jet-A/JP-8
+%}
