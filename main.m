@@ -51,10 +51,6 @@ function out = diffuser()
 
 end
 
-function out = nozzle()
-% Nozzle type C
-end
-
 function out = fan()
 
 end
@@ -82,6 +78,10 @@ end
 
 function out = afterburner()
 
+end
+
+function out = nozzle()
+% Nozzle type C
 end
 
 %% Engine Structure
