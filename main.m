@@ -45,31 +45,60 @@ spr.HPC = 0.99; % HPC duct SPR, []
 spr.ABR = 0.98; % Afterburner duct SPR, []
 spr.NOZ = 0.98; % Nozzle SPR, []
 
+%% Inlet ambiant conditions (idk if this is how you want to structure it but just lmk)
+flow.gamma = 1.4; % Inlet gamma
+flow.P0_a = p_a * (1 + ((flow.gamma - 1)/2) * M_1^2)^(flow.gamma/(flow.gamma - 1)); % Ambiant static pressure, Pa
+flow.T0_a = T_a * (1 + ((flow.gamma - 1)/2) * M_1^2); % Ambiant static temperature, K
+flow.mdot = dmdt_tot; % Mass flow rate, kg/s
+flow.cp = 1.005; % Specific heat, kJ/kg-K
 %% Engine Components
 
-function out = diffuser()
+% spr is used for moddeling stagnation losses in the ducts between
+% components, and pr is used to the actual pressure change withing the
+% components. I believe
+
+function out = diffuser(in,pr) %Isentropic and adiabatic
+out = in;
+out.P0 = in_P0 * pr; 
+
+% adiabadic -> T0_a = T0_2
 
 end
 
-function out = nozzle()
-% Nozzle type C
-end
-
-function out = fan()
-
-end
-
-function out = compressor()
+function out = fan(in, pr, eta) 
+gamma = in.gamma;
+out = in;
+out.P0 = in.P0 * pr; 
+out.T0 = in.T0 * (1 + (1/eta) * (pr^((gamma - 1)/gamma)));
 
 end
 
-function out = turbine()
-
+function out = compressor(in, pr, eta)
+gamma = in.gamma;
+out = in;
+out.P0 = in.P0 * pr;
+out.T0 = in.T0 * (1 + (1/eta) * (pr^((gamma-1)/gamma)-1));
 end
+
 
 function out = combustor()
 
 end
+
+function out = HPT(in, W_req_HPC, mdot, eta )
+gamma = in.gamma;
+out = in;
+delta_T = W_req_HPC / (mdot*cp);
+out.T0 = in.T0 - delta_T/eta;
+out.P0 = in.P0 * (1 - (1/eta)*(1 - (out.T0/in.T0)))^(gamma/(gamma-1)); 
+end
+
+function out = HPT(in, W_req_LPC_fan, mdot, eta )
+gamma = in.gamma;
+out = in;
+delta_T = W_req_LPC_fan / (mdot*cp);
+out.T0 = in.T0 - delta_T/eta;
+out.P0 = in.P0 * (1 - (1/eta)*(1 - (out.T0/in.T0)))^(gamma/(gamma-1));
 
 function out = duct()
 
@@ -84,6 +113,9 @@ function out = afterburner()
 
 end
 
+function out = nozzle()
+% Nozzle type C
+end
 %% Engine Structure
 
 %{
