@@ -4,10 +4,14 @@
 
 clear; close all; clc;
 
+% Meeting Todos
+% Run a bunch of CEA simulations
+% What to do about afterburning condition -> Another burner
+
 %% Constants
 
 % Design-point Operating Conditions
-dmdt_tot = 150; % Total air mass flow rate, kg/s
+dmdt_a = 150; % Total air mass flow rate, kg/s
 pr = 28; % Overall pressure ratio, []
 LPC_pr = 1.25; % LPC pressure ratio, []
 T_5 = 2000; % TIT, K
@@ -100,103 +104,123 @@ end
 
 function out = fan(in, pr, eta) 
 
-R = 0.287;   
+  R = 0.287;   
 
-P1 = in.P0;
-P2 = P1 * pr;
+  P1 = in.P0;
+  P2 = P1 * pr;
 
-[~,h1,s1] = air_props(in.T0);
+  [~,h1,s1] = air_props(in.T0);
 
-fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
-T2s = fzero(fun, in.T0 * pr^0.3);
+  fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
+  T2s = fzero(fun, in.T0 * pr^0.3);
 
-[~,h2s,~] = air_props(T2s);
+  [~,h2s,~] = air_props(T2s);
 
-h2 = h1 + (h2s - h1)/eta;
+  h2 = h1 + (h2s - h1)/eta;
 
-fun2 = @(T2) enthalpy_air(T2) - h2;
-T2 = fzero(fun2, T2s);
+  fun2 = @(T2) enthalpy_air(T2) - h2;
+  T2 = fzero(fun2, T2s);
 
-out.T0 = T2;
-out.P0 = P2;
+  out.T0 = T2;
+  out.P0 = P2;
 
-[out.cp,out.h,out.s] = air_props(T2);
+  [out.cp,out.h,out.s] = air_props(T2);
 
 end
 
 function out = compressor(in, pr, eta)
+  R = 0.287;
+  out = in;
+  P1 = in.P0;
+  P2 = P1 * pr;
 
-R = 0.287;
-out = in;
-P1 = in.P0;
-P2 = P1 * pr;
+  [~,h1,s1] = air_props(in.T0);
 
+  fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
+  T2s = fzero(fun, in.T0 * (pr^0.3));
 
-[~,h1,s1] = air_props(in.T0);
+  [~,h2s,~] = air_props(T2s);
 
+  h2 = h1 + (h2s - h1)/eta;
 
-fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
-T2s = fzero(fun, in.T0 * (pr^0.3));
+  fun2 = @(T2) enthalpy_air(T2) - h2;
+  T2 = fzero(fun2, T2s);
 
-[~,h2s,~] = air_props(T2s);
-
-h2 = h1 + (h2s - h1)/eta;
-
-fun2 = @(T2) enthalpy_air(T2) - h2;
-T2 = fzero(fun2, T2s);
-
-out.T0 = T2;
-out.P0 = P2;  
-[out.cp,out.h,out.s] = air_props(T2);
-
-end
-
-
-function out = combustor()
-
+  out.T0 = T2;
+  out.P0 = P2;  
+  [out.cp,out.h,out.s] = air_props(T2);
 end
 
 function out = turbine(in, W_req, eta)
+  R = 0.287;
 
-R = 0.287;
+  out = in;
 
-out = in;
+  [~,h1,s1] = air_props(in.T0);
 
-[~,h1,s1] = air_props(in.T0);
+  h2 = h1 - W_req;
 
-h2 = h1 - W_req;
+  fun = @(T2) enthalpy_air(T2) - h2;
+  T2 = fzero(fun, in.T0 - 300);
 
-fun = @(T2) enthalpy_air(T2) - h2;
-T2 = fzero(fun, in.T0 - 300);
+  [~,~,s2] = air_props(T2);
 
-[~,~,s2] = air_props(T2);
+  P2 = in.P0 * exp((s2 - s1)/R);
 
-P2 = in.P0 * exp((s2 - s1)/R);
+  P2 = in.P0 * (P2/in.P0)^eta;
 
-P2 = in.P0 * (P2/in.P0)^eta;
+  out.T0 = T2;
+  out.P0 = P2;
 
-out.T0 = T2;
-out.P0 = P2;
-
-[out.cp,out.h,out.s] = air_props(T2);
-
+  [out.cp,out.h,out.s] = air_props(T2);
 end
 
 function out = duct(in, spr)
-out = in;
-out.P0 = in.P0 * spr;
-out.T0 = in.T0;
-[out.cp,out.h,out.s] = air_props(out.T0);
-
+  out = in;
+  out.P0 = in.P0 * spr;
+  out.T0 = in.T0;
+  [out.cp,out.h,out.s] = air_props(out.T0);
 end
 
-function out = mixer()
+function out = combustor(in, spr, u)
+% Outputs of previous stage in a struct, everything else passed?
+    out.p0_out = spr*in.p0;
+
+    cea = % Load CEA results
+    i = 0; err = 1; T = in.T0;
+    while err > 0.001 && i < 1e4
+        i = i+1;
+        gamma = cea(?); % Use isentropic/ideal/gamma=1.4 if no cea data? First iteration?
+        M = cea(?);
+        q = cea(?);
+        t0_star = in.T0*(1+gamma*M^2)^2/(2*(gamma+1)*M^2*(1+(gamma-1)/2*M^2));
+        out.t0_out = t0_star*(in.T0/t0_star + q/(gamma*R/(gamma-1)*t0_star));
+        % then calculate updated gamma somehow? and calculate error
+        T =
+    end
+end
+
+function out = mixer(in1, in2, spr)
 % Assuming 100% mixing takes place
-
+    out.h0 = (in1.dmdt*in1.h0 + in2.dmdt*in2.h0)/(in1.dmdt+in2.dmdt);
+    out.p0 = 
+    out.T0 = (in1.dmdt*in1.T0 + in2.dmdt*in2.T0)/(in1.dmdt+in2.dmdt); % assuming h=f(T) only
 end
 
-function out = afterburner()
+function out = afterburner_inop(in, spr)
+    out = duct(in, spr);
+end
 
+function out = afterburner_op()
+    %TBD probably another combustor
+end
+
+function out = nozzle(in, spr, eta)
+    out.h0 = in.h0;
+    out.p0 = in.p0*spr;
+    out.T0 = in.T0;
+    out.p = out.p0*(1+(in.gamma-1)/2*in.M^2)^(-in.gamma/(in.gamma-1));
+    out.u = sqrt(2*eta*in.gamma/(in.gamma-1)*in.R*in.T0*(1-(out.p/in.p0))^((in.gamma-1)/in.gamma));
 end
 
 function out = nozzle()
@@ -240,3 +264,18 @@ assumptions are identical to those listed for dry operations.
 %{
 Fuel type: Jet-A/JP-8
 %}
+
+u_e = nozzle.u;
+p_e = nozzle.p;
+
+% Output Parameters
+thrust = (dmdt_a+dmdt_f)*u_e-dmdt_a*u+pi*d_10^2/4*(p_e-p_a); % Thrust, N
+ST = thrust/dmdt_a; % Specific thrust, Ns/kg
+TSFC = dmdt_f/thrust; % Thrust-specific fuel consumption, kg/Ns
+eta_th = (1+f)*(u_e^2-u^2)/(2*f*Q_R); % Thermal efficiency, []
+eta_p = thrust*u/dmdt_a/((1+f)*(u_e^2/2)-u^2/2); % Propulsion efficiency, []
+eta_0 = eta_th*eta_p; % Overall efficiency, []
+LD = 10; % Estimate of cruise lift to drag ratio, []
+MTOW = 30000; % Rough estimation of maximum takeoff weight, kg
+ZFW = 0.6*MTOW; % Estimate of zero fuel weight for fighter jet, kg
+s = eta_0*LD*Q_R/g*log(MTOW/ZFW); % Aircraft range, m
