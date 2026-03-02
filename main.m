@@ -49,42 +49,41 @@ spr.HPC = 0.99; % HPC duct SPR, []
 spr.ABR = 0.98; % Afterburner duct SPR, []
 spr.NOZ = 0.98; % Nozzle SPR, []
 
+%% Inlet ambiant conditions
 
-%% Inlet ambiant conditions 
 gamma_guess = 1.4;
 flow.P0 = p_a * (1 + ((gamma_guess - 1)/2) * M_1^2)^(gamma_guess/(gamma_guess - 1)); % Ambiant static pressure, Pa
 flow.T0 = T_a * (1 + ((gamma_guess - 1)/2) * M_1^2); % Ambiant static temperature, K
 flow.mdot = dmdt_tot; % Mass flow rate, kg/s
 flow.M = M_1;
 [flow.cp, flow.h, flow.s] = air_props(flow.T0);
+
 %% Engine Components
 
 function [cp,h,s] = air_props(T)
-
-R = 0.287;  % KJ/kg-K
-
-if T <= 1000
-    a1 = 3.78245636;
-    a2 = -2.99673416e-3;
-    a3 = 9.84730201e-6;
-    a4 = -9.68129509e-9;
-    a5 = 3.24372837e-12;
-    a6 = -1063.94356;
-    a7 = 3.65767573;
-else
-    a1 = 3.28253784;
-    a2 = 1.48308754e-3;
-    a3 = -7.57966669e-7;
-    a4 = 2.09470555e-10;
-    a5 = -2.16717794e-14;
-    a6 = -1088.45772;
-    a7 = 5.45323129;
-end
-
-cp = R*(a1 + a2*T + a3*T^2 + a4*T^3 + a5*T^4);
-h  = R*T*(a1 + a2*T/2 + a3*T^2/3 + a4*T^3/4 + a5*T^4/5 + a6/T);
-s  = R*(a1*log(T) + a2*T + a3*T^2/2 + a4*T^3/3 + a5*T^4/4 + a7);
-
+    R = 0.287;  % KJ/kg-K
+    
+    if T <= 1000
+        a1 = 3.78245636;
+        a2 = -2.99673416e-3;
+        a3 = 9.84730201e-6;
+        a4 = -9.68129509e-9;
+        a5 = 3.24372837e-12;
+        a6 = -1063.94356;
+        a7 = 3.65767573;
+    else
+        a1 = 3.28253784;
+        a2 = 1.48308754e-3;
+        a3 = -7.57966669e-7;
+        a4 = 2.09470555e-10;
+        a5 = -2.16717794e-14;
+        a6 = -1088.45772;
+        a7 = 5.45323129;
+    end
+    
+    cp = R*(a1 + a2*T + a3*T^2 + a4*T^3 + a5*T^4);
+    h  = R*T*(a1 + a2*T/2 + a3*T^2/3 + a4*T^3/4 + a5*T^4/5 + a6/T);
+    s  = R*(a1*log(T) + a2*T + a3*T^2/2 + a4*T^3/3 + a5*T^4/4 + a7);
 end
 
 function s = entropy_air(T)
@@ -94,12 +93,12 @@ end
 function h = enthalpy_air(T)
     [~,h,~] = air_props(T);
 end
+
 function out = diffuser(in,pr) %Isentropic and adiabatic
-out = in;
-out.P0 = in.P0 * pr; 
-
-% adiabadic -> T0_a = T0_2
-
+    out = in;
+    out.P0 = in.P0 * pr; 
+    
+    % adiabadic -> T0_a = T0_2
 end
 
 function out = fan(in, pr, eta) 
@@ -183,7 +182,7 @@ function out = duct(in, spr)
 end
 
 function out = combustor(in, spr, u)
-% Outputs of previous stage in a struct, everything else passed?
+    % Outputs of previous stage in a struct, everything else passed?
     out.p0_out = spr*in.p0;
 
     cea = % Load CEA results
@@ -201,7 +200,7 @@ function out = combustor(in, spr, u)
 end
 
 function out = mixer(in1, in2, spr)
-% Assuming 100% mixing takes place
+    % Assuming 100% mixing takes place
     out.h0 = (in1.dmdt*in1.h0 + in2.dmdt*in2.h0)/(in1.dmdt+in2.dmdt);
     out.p0 = 
     out.T0 = (in1.dmdt*in1.T0 + in2.dmdt*in2.T0)/(in1.dmdt+in2.dmdt); % assuming h=f(T) only
@@ -223,15 +222,12 @@ function out = nozzle(in, spr, eta)
     out.u = sqrt(2*eta*in.gamma/(in.gamma-1)*in.R*in.T0*(1-(out.p/in.p0))^((in.gamma-1)/in.gamma));
 end
 
-function out = nozzle()
-% Nozzle type C
-end
 %% Engine Structure
 
 %{
 Element Numbering
 a: Atmospheric (inlet condition)
-1: Fan inlet
+1: Diffuser outlet
 2: Fan outlet
 3: LPC outlet
 4: HPC outlet
@@ -265,6 +261,8 @@ assumptions are identical to those listed for dry operations.
 Fuel type: Jet-A/JP-8
 %}
 
+
+
 u_e = nozzle.u;
 p_e = nozzle.p;
 
@@ -272,9 +270,11 @@ p_e = nozzle.p;
 thrust = (dmdt_a+dmdt_f)*u_e-dmdt_a*u+pi*d_10^2/4*(p_e-p_a); % Thrust, N
 ST = thrust/dmdt_a; % Specific thrust, Ns/kg
 TSFC = dmdt_f/thrust; % Thrust-specific fuel consumption, kg/Ns
+
 eta_th = (1+f)*(u_e^2-u^2)/(2*f*Q_R); % Thermal efficiency, []
 eta_p = thrust*u/dmdt_a/((1+f)*(u_e^2/2)-u^2/2); % Propulsion efficiency, []
 eta_0 = eta_th*eta_p; % Overall efficiency, []
+
 LD = 10; % Estimate of cruise lift to drag ratio, []
 MTOW = 30000; % Rough estimation of maximum takeoff weight, kg
 ZFW = 0.6*MTOW; % Estimate of zero fuel weight for fighter jet, kg
