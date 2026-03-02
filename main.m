@@ -45,39 +45,110 @@ spr.HPC = 0.99; % HPC duct SPR, []
 spr.ABR = 0.98; % Afterburner duct SPR, []
 spr.NOZ = 0.98; % Nozzle SPR, []
 
-%% Inlet ambiant conditions (idk if this is how you want to structure it but just lmk)
-flow.gamma = 1.4; % Inlet gamma
-flow.P0_a = p_a * (1 + ((flow.gamma - 1)/2) * M_1^2)^(flow.gamma/(flow.gamma - 1)); % Ambiant static pressure, Pa
-flow.T0_a = T_a * (1 + ((flow.gamma - 1)/2) * M_1^2); % Ambiant static temperature, K
+
+%% Inlet ambiant conditions 
+gamma_guess = 1.4;
+flow.P0 = p_a * (1 + ((gamma_guess - 1)/2) * M_1^2)^(gamma_guess/(gamma_guess - 1)); % Ambiant static pressure, Pa
+flow.T0 = T_a * (1 + ((gamma_guess - 1)/2) * M_1^2); % Ambiant static temperature, K
 flow.mdot = dmdt_tot; % Mass flow rate, kg/s
-flow.cp = 1.005; % Specific heat, kJ/kg-K
+flow.M = M_1;
+[flow.cp, flow.h, flow.s] = air_props(flow.T0);
 %% Engine Components
 
-% spr is used for moddeling stagnation losses in the ducts between
-% components, and pr is used to the actual pressure change withing the
-% components. I believe
+function [cp,h,s] = air_props(T)
 
+R = 0.287;  % KJ/kg-K
+
+if T <= 1000
+    a1 = 3.78245636;
+    a2 = -2.99673416e-3;
+    a3 = 9.84730201e-6;
+    a4 = -9.68129509e-9;
+    a5 = 3.24372837e-12;
+    a6 = -1063.94356;
+    a7 = 3.65767573;
+else
+    a1 = 3.28253784;
+    a2 = 1.48308754e-3;
+    a3 = -7.57966669e-7;
+    a4 = 2.09470555e-10;
+    a5 = -2.16717794e-14;
+    a6 = -1088.45772;
+    a7 = 5.45323129;
+end
+
+cp = R*(a1 + a2*T + a3*T^2 + a4*T^3 + a5*T^4);
+h  = R*T*(a1 + a2*T/2 + a3*T^2/3 + a4*T^3/4 + a5*T^4/5 + a6/T);
+s  = R*(a1*log(T) + a2*T + a3*T^2/2 + a4*T^3/3 + a5*T^4/4 + a7);
+
+end
+
+function s = entropy_air(T)
+    [~,~,s] = air_props(T);
+end
+
+function h = enthalpy_air(T)
+    [~,h,~] = air_props(T);
+end
 function out = diffuser(in,pr) %Isentropic and adiabatic
 out = in;
-out.P0 = in_P0 * pr; 
+out.P0 = in.P0 * pr; 
 
 % adiabadic -> T0_a = T0_2
 
 end
 
 function out = fan(in, pr, eta) 
-gamma = in.gamma;
-out = in;
-out.P0 = in.P0 * pr; 
-out.T0 = in.T0 * (1 + (1/eta) * (pr^((gamma - 1)/gamma)));
+
+R = 0.287;   
+
+P1 = in.P0;
+P2 = P1 * pr;
+
+[~,h1,s1] = air_props(in.T0);
+
+fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
+T2s = fzero(fun, in.T0 * pr^0.3);
+
+[~,h2s,~] = air_props(T2s);
+
+h2 = h1 + (h2s - h1)/eta;
+
+fun2 = @(T2) enthalpy_air(T2) - h2;
+T2 = fzero(fun2, T2s);
+
+out.T0 = T2;
+out.P0 = P2;
+
+[out.cp,out.h,out.s] = air_props(T2);
 
 end
 
 function out = compressor(in, pr, eta)
-gamma = in.gamma;
+
+R = 0.287;
 out = in;
-out.P0 = in.P0 * pr;
-out.T0 = in.T0 * (1 + (1/eta) * (pr^((gamma-1)/gamma)-1));
+P1 = in.P0;
+P2 = P1 * pr;
+
+
+[~,h1,s1] = air_props(in.T0);
+
+
+fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
+T2s = fzero(fun, in.T0 * (pr^0.3));
+
+[~,h2s,~] = air_props(T2s);
+
+h2 = h1 + (h2s - h1)/eta;
+
+fun2 = @(T2) enthalpy_air(T2) - h2;
+T2 = fzero(fun2, T2s);
+
+out.T0 = T2;
+out.P0 = P2;  
+[out.cp,out.h,out.s] = air_props(T2);
+
 end
 
 
@@ -85,22 +156,37 @@ function out = combustor()
 
 end
 
-function out = HPT(in, W_req_HPC, mdot, eta )
-gamma = in.gamma;
+function out = turbine(in, W_req, eta)
+
+R = 0.287;
+
 out = in;
-delta_T = W_req_HPC / (mdot*cp);
-out.T0 = in.T0 - delta_T/eta;
-out.P0 = in.P0 * (1 - (1/eta)*(1 - (out.T0/in.T0)))^(gamma/(gamma-1)); 
+
+[~,h1,s1] = air_props(in.T0);
+
+h2 = h1 - W_req;
+
+fun = @(T2) enthalpy_air(T2) - h2;
+T2 = fzero(fun, in.T0 - 300);
+
+[~,~,s2] = air_props(T2);
+
+P2 = in.P0 * exp((s2 - s1)/R);
+
+P2 = in.P0 * (P2/in.P0)^eta;
+
+out.T0 = T2;
+out.P0 = P2;
+
+[out.cp,out.h,out.s] = air_props(T2);
+
 end
 
-function out = HPT(in, W_req_LPC_fan, mdot, eta )
-gamma = in.gamma;
+function out = duct(in, spr)
 out = in;
-delta_T = W_req_LPC_fan / (mdot*cp);
-out.T0 = in.T0 - delta_T/eta;
-out.P0 = in.P0 * (1 - (1/eta)*(1 - (out.T0/in.T0)))^(gamma/(gamma-1));
-
-function out = duct()
+out.P0 = in.P0 * spr;
+out.T0 = in.T0;
+[out.cp,out.h,out.s] = air_props(out.T0);
 
 end
 
