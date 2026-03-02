@@ -4,10 +4,14 @@
 
 clear; close all; clc;
 
+% Meeting Todos
+% Run a bunch of CEA simulations
+% What to do about afterburning condition -> Another burner
+
 %% Constants
 
 % Design-point Operating Conditions
-dmdt_tot = 150; % Total air mass flow rate, kg/s
+dmdt_a = 150; % Total air mass flow rate, kg/s
 pr = 28; % Overall pressure ratio, []
 LPC_pr = 1.25; % LPC pressure ratio, []
 T_5 = 2000; % TIT, K
@@ -63,25 +67,51 @@ function out = turbine()
 
 end
 
-function out = combustor()
+function out = combustor(in, spr, u)
+% Outputs of previous stage in a struct, everything else passed?
+    out.p0_out = spr*in.p0;
 
+    cea = % Load CEA results
+    i = 0; err = 1; T = in.T0;
+    while err > 0.001 && i < 1e4
+        i = i+1;
+        gamma = cea(?); % Use isentropic/ideal/gamma=1.4 if no cea data? First iteration?
+        M = cea(?);
+        q = cea(?);
+        t0_star = in.T0*(1+gamma*M^2)^2/(2*(gamma+1)*M^2*(1+(gamma-1)/2*M^2));
+        out.t0_out = t0_star*(in.T0/t0_star + q/(gamma*R/(gamma-1)*t0_star));
+        % then calculate updated gamma somehow? and calculate error
+        T =
+    end
 end
 
-function out = duct()
-
+function out = duct(in, spr)
+    out.p0 = spr*in.p0;
+    out.T0 = in.T0;
+    out.h0 = in.h0; % Assuming no heat transfer
 end
 
-function out = mixer()
+function out = mixer(in1, in2, spr)
 % Assuming 100% mixing takes place
-
+    out.h0 = (in1.dmdt*in1.h0 + in2.dmdt*in2.h0)/(in1.dmdt+in2.dmdt);
+    out.p0 = 
+    out.T0 = (in1.dmdt*in1.T0 + in2.dmdt*in2.T0)/(in1.dmdt+in2.dmdt); % assuming h=f(T) only
 end
 
-function out = afterburner()
-
+function out = afterburner_inop(in, spr)
+    out = duct(in, spr);
 end
 
-function out = nozzle()
-% Nozzle type C
+function out = afterburner_op()
+    %TBD probably another combustor
+end
+
+function out = nozzle(in, spr, eta)
+    out.h0 = in.h0;
+    out.p0 = in.p0*spr;
+    out.T0 = in.T0;
+    out.p = out.p0*(1+(in.gamma-1)/2*in.M^2)^(-in.gamma/(in.gamma-1));
+    out.u = sqrt(2*eta*in.gamma/(in.gamma-1)*in.R*in.T0*(1-(out.p/in.p0))^((in.gamma-1)/in.gamma));
 end
 
 %% Engine Structure
@@ -122,3 +152,18 @@ assumptions are identical to those listed for dry operations.
 %{
 Fuel type: Jet-A/JP-8
 %}
+
+u_e = nozzle.u;
+p_e = nozzle.p;
+
+% Output Parameters
+thrust = (dmdt_a+dmdt_f)*u_e-dmdt_a*u+pi*d_10^2/4*(p_e-p_a); % Thrust, N
+ST = thrust/dmdt_a; % Specific thrust, Ns/kg
+TSFC = dmdt_f/thrust; % Thrust-specific fuel consumption, kg/Ns
+eta_th = (1+f)*(u_e^2-u^2)/(2*f*Q_R); % Thermal efficiency, []
+eta_p = thrust*u/dmdt_a/((1+f)*(u_e^2/2)-u^2/2); % Propulsion efficiency, []
+eta_0 = eta_th*eta_p; % Overall efficiency, []
+LD = 10; % Estimate of cruise lift to drag ratio, []
+MTOW = 30000; % Rough estimation of maximum takeoff weight, kg
+ZFW = 0.6*MTOW; % Estimate of zero fuel weight for fighter jet, kg
+s = eta_0*LD*Q_R/g*log(MTOW/ZFW); % Aircraft range, m
