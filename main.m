@@ -93,48 +93,47 @@ function s = entropy_air(T)
 end
 
 function h = enthalpy_air(T)
-
     [~,h,~,~] = air_props(T);
 end
 
 function out = diffuser(in,pr) %Isentropic and adiabatic
     out = in;
-    out.P0 = in.P0 * pr; 
+    out.p0 = in.p0 * pr;
     
     % adiabadic -> T0_a = T0_2
 end
 
 function out = fan(in, pr, eta) 
-
-  R = 0.287;   
-
-  P1 = in.P0;
-  P2 = P1 * pr;
-
-  [~,h1,s1,~] = air_props(in.T0);
-
-  fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
-  T2s = fzero(fun, in.T0 * pr^0.3);
-
-  [~,h2s,~,~] = air_props(T2s);
-
-  h2 = h1 + (h2s - h1)/eta;
-
-  fun2 = @(T2) enthalpy_air(T2) - h2;
-  T2 = fzero(fun2, T2s);
-
-  out.T0 = T2;
-  out.P0 = P2;
-  out.W = 
-
-  [out.cp,out.h,out.s] = air_props(T2);
+    
+    R = 0.287;   
+    
+    P1 = in.p0;
+    P2 = P1 * pr;
+    
+    [~,h1,s1,~] = air_props(in.T0);
+    
+    fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
+    T2s = fzero(fun, in.T0 * pr^0.3);
+    
+    [~,h2s,~,~] = air_props(T2s);
+    
+    h2 = h1 + (h2s - h1)/eta;
+    
+    fun2 = @(T2) enthalpy_air(T2) - h2;
+    T2 = fzero(fun2, T2s);
+    
+    out.T0 = T2;
+    out.p0 = P2;
+    out.W = in.dmdt*(h2-h1);
+    
+    [out.cp,out.h,out.s] = air_props(T2);
 
 end
 
-function out = compressor(in, pr, eta_s)
+function out = compressor(in, pr, eta_s, dmdt_aH)
   R = 0.287;
   out = in;
-  P1 = in.P0;
+  P1 = in.p0;
   P2 = P1 * pr;
 
   [~,h1,s1,~] = air_props(in.T0);
@@ -150,52 +149,63 @@ function out = compressor(in, pr, eta_s)
   T2 = fzero(fun2, T2s);
 
   out.T0 = T2;
-  out.P0 = P2;  
+  out.p0 = P2;  
   [out.cp,out.h,out.s] = air_props(T2);
-  out.W = dmdt_a*(h2-h1);
+  out.dmdt = dmdt_aH;
+  out.W = dmdt_aH*(h2-h1);
 end
 
-function out = turbine(in, W_req, eta)
+function out = turbine(in, w_req, eta)
   R = 0.287;
 
   out = in;
 
   [~,h1,s1,~] = air_props(in.T0);
 
-  h2 = h1 - W_req;
+  h2 = h1 - w_req;
 
   fun = @(T2) enthalpy_air(T2) - h2;
   T2 = fzero(fun, in.T0 - 300);
 
   [~,~,s2,~] = air_props(T2);
 
-  P2 = in.P0 * exp((s2 - s1)/R);
+  P2 = in.p0 * exp((s2 - s1)/R);
 
-  P2 = in.P0 * (P2/in.P0)^eta;
+  P2 = in.p0 * (P2/in.p0)^eta;
 
   out.T0 = T2;
-  out.P0 = P2;
+  out.p0 = P2;
 
   [out.cp,out.h,out.s] = air_props(T2);
 end
 
-function out = duct(in, spr)
+function out = duct(in, spr, BPR)
     out = in;
-    out.P0 = in.P0 * spr;
+    out.dmdt = in.dmdt*BPR;
+    out.p0 = in.p0 * spr;
     out.T0 = in.T0;
     [out.cp,out.h,out.s] = air_props(out.T0);
 end
 
-function out = combustor(in, spr, LHV, eta)
-    % Outputs of previous stage in a struct, everything else passed?
-    out.p0_out = spr*in.p0;
-    disp(['CEA Input Data: p=',num2str(in.p),' and T=',num2str(in.T)])
+function out = combustor(in, spr, LHV, eta, R)
+    i = 0; err = 1; tmp = 800;
+    while err > 0.001 && i < 1e4
+        i = i+1;
+        [~, ~, ~, gamma] = air_props(tmp);
+        M = 250/sqrt(gamma*R*tmp);
+        T = in.T0/(1+(gamma-1)/2*M^2);
+        err = (T-tmp)/T;
+        tmp = T;
+    end
+    p = in.p0*(1+(gamma-1)/2*M^2)^(-gamma/(gamma-1));
+    disp(['CEA Input Data: p=',num2str(p),' and T=',num2str(T)])
     gamma = input("γ=");
-    c = input("c (sonic velocity)=");
+    c = input("c [m/s]=");
     M = 250/c;
     out.Q_R = input("Q_R=");
+    out.p0 = spr*in.p0;
     t0_star = in.T0*(1+gamma*M^2)^2/(2*(gamma+1)*M^2*(1+(gamma-1)/2*M^2));
-    out.t0_out = t0_star*(in.T0/t0_star + out.Q_R/(gamma*R/(gamma-1)*t0_star));
+    out.T0 = t0_star*(in.T0/t0_star + out.Q_R/(gamma*R/(gamma-1)*t0_star));
     out.dmdt_f = out.Q_R/LHV/eta;
 end
 
@@ -211,14 +221,13 @@ function out = mixer(core, bypass, spr)
 
   hm = (mdot_core * hc + mdot_bypass * hb) / mdot_tot;
 
-
   fun = @(T) enthalpy_air(T) - hm;
   T_mix = fzero(fun, (core.T0 + bypass.T0)/2);
 
   p_mix = min(core.P0,bypass.P0);
-  out.P0 = p_mix * spr;
+  out.p0 = p_mix * spr;
   out.T0 = T_mix;
-  out.mdot = mdot_tot;
+  out.dmdt = mdot_tot;
 end
 
 function out = afterburner_inop(in, spr)
@@ -304,21 +313,24 @@ st6 = turbine(st5, W_HPC, eta.HPT);
 
 ambient.T = 15+273.15;
 ambient.p = 101.325e3;
+ambient.dmdt = 150;
 R = 0.287;
 cp_a = air_props(T);
 gamma_a = 1/(1-R/cp_a);
 M_a = 0.5;
+dmdt_aH = (1-BPR)*dmdt_a;
 u = M_a*sqrt(gamma*R*ambient.T);
 ambient.p0 = ambient.p*(1+(gamma_a-1)/2*M^2)^(gamma_a/(gamma_a-1));
 ambient.T0 = ambient.T*(1+(gamma_a-1)/2*M^2);
 
 engine.diffuser = diffuser(ambient, spr.INT);
-engine.fan = fan(engine.diffuser, FAN_pr, eta.FAN);
-engine.lpc = compressor(engine.fan, spr.LPC, eta.LPC);
-engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC);
-engine.combustor = combustor(engine.hpc, spr.BRN);
-engine.HPT = turbine(engine.combustor, engine.lpc.w+engine.fan.w, eta.HPT);
-engine.LPT = turbine(engine.HPT, engine.hpc.w, eta.LPT);
+engine.fan = fan(engine.diffuser, FAN_pr, eta.FAN, dmdt_a);
+engine.lpc = compressor(engine.fan, spr.LPC, eta.LPC, dmdt_aH);
+engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC, dmdt_aH);
+engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
+
+engine.HPT = turbine(engine.combustor, (engine.lpc.W+engine.fan.W)/dmdt_aH, eta.HPT);
+engine.LPT = turbine(engine.HPT, engine.hpc.W/dmdt_aH, eta.LPT);
 engine.duct = duct(engine.fan, spr.BPD);
 engine.mixer = mixer(engine.duct, engine.combustor, spr.MXR);
 engine.afterburner = afterburner_inop(engine.mixer, spr.ABR);
@@ -332,7 +344,6 @@ Q_R = engine.combustor.Q_R;
 u_e = engine.nozzle.u;
 p_e = engine.nozzle.p;
 % derived parameters
-dmdt_aH = (1-BPR)*dmdt_a;
 f = dmdt_f/dmdt_aH;
 
 % Output Parameters
