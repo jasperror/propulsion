@@ -59,7 +59,7 @@ flow.M = M_1;
 [flow.cp, flow.h, flow.s] = air_props(flow.T0);
 %% Engine Components
 
-function [cp,h,s] = air_props(T)
+function [cp,h,s,gamma] = air_props(T)
 
 R = 0.287;  % KJ/kg-K
 
@@ -84,16 +84,19 @@ end
 cp = R*(a1 + a2*T + a3*T^2 + a4*T^3 + a5*T^4);
 h  = R*T*(a1 + a2*T/2 + a3*T^2/3 + a4*T^3/4 + a5*T^4/5 + a6/T);
 s  = R*(a1*log(T) + a2*T + a3*T^2/2 + a4*T^3/3 + a5*T^4/4 + a7);
-
+cv = cp - R;
+gamma = cp/cv;
 end
 
 function s = entropy_air(T)
-    [~,~,s] = air_props(T);
+    [~,~,s,~] = air_props(T);
 end
 
 function h = enthalpy_air(T)
-    [~,h,~] = air_props(T);
+
+    [~,h,~,~] = air_props(T);
 end
+
 function out = diffuser(in,pr) %Isentropic and adiabatic
 out = in;
 out.P0 = in.P0 * pr; 
@@ -109,12 +112,12 @@ function out = fan(in, pr, eta)
   P1 = in.P0;
   P2 = P1 * pr;
 
-  [~,h1,s1] = air_props(in.T0);
+  [~,h1,s1,~] = air_props(in.T0);
 
   fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
   T2s = fzero(fun, in.T0 * pr^0.3);
 
-  [~,h2s,~] = air_props(T2s);
+  [~,h2s,~,~] = air_props(T2s);
 
   h2 = h1 + (h2s - h1)/eta;
 
@@ -134,12 +137,12 @@ function out = compressor(in, pr, eta)
   P1 = in.P0;
   P2 = P1 * pr;
 
-  [~,h1,s1] = air_props(in.T0);
+  [~,h1,s1,~] = air_props(in.T0);
 
   fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
   T2s = fzero(fun, in.T0 * (pr^0.3));
 
-  [~,h2s,~] = air_props(T2s);
+  [~,h2s,~,~] = air_props(T2s);
 
   h2 = h1 + (h2s - h1)/eta;
 
@@ -156,14 +159,14 @@ function out = turbine(in, W_req, eta)
 
   out = in;
 
-  [~,h1,s1] = air_props(in.T0);
+  [~,h1,s1,~] = air_props(in.T0);
 
   h2 = h1 - W_req;
 
   fun = @(T2) enthalpy_air(T2) - h2;
   T2 = fzero(fun, in.T0 - 300);
 
-  [~,~,s2] = air_props(T2);
+  [~,~,s2,~] = air_props(T2);
 
   P2 = in.P0 * exp((s2 - s1)/R);
 
@@ -200,11 +203,27 @@ function out = combustor(in, spr, u)
     end
 end
 
-function out = mixer(in1, in2, spr)
+function out = mixer(core, bypass, spr)
 % Assuming 100% mixing takes place
-    out.h0 = (in1.dmdt*in1.h0 + in2.dmdt*in2.h0)/(in1.dmdt+in2.dmdt);
-    out.p0 = 
-    out.T0 = (in1.dmdt*in1.T0 + in2.dmdt*in2.T0)/(in1.dmdt+in2.dmdt); % assuming h=f(T) only
+  out = core;
+  mdot_core = core.mdot;
+  mdot_bypass = bypass.mdot;
+  mdot_tot = mdot_bypass + mdot_core;
+
+  [~,hc,~,~] = air_props(core.T0);
+  [~,hb,~,~] = air_props(bypass.T0);
+
+  hm = (mdot_core * hc + mdot_bypass * hb) / mdot_tot;
+
+
+  fun = @(T) enthalpy_air(T) - hm;
+  T_mix = fzero(fun, (core.T0 + bypass.T0)/2);
+
+  p_mix = min(core.P0,bypass.P0);
+  out.P0 = p_mix * spr;
+  out.T0 = T_mix;
+  out.mdot = mdot_tot;
+  
 end
 
 function out = afterburner_inop(in, spr)
@@ -227,6 +246,34 @@ function out = nozzle()
 % Nozzle type C
 end
 %% Engine Structure
+a = flow;
+
+st1 = diffuser(a, spr.int);
+
+st2 = fan(st1, FAN_pr, eta.fan);
+st2 = duct(st2,spr.LPC);
+
+st3 = compressor(st2, LPC_pr, eta.Lpc);
+st3 = duct(st3, spr.LPC);
+
+st4 = compressor(st3, HPC_pr, eta.HPC);
+st4 = duct(st4, spr.HPC);
+
+st5 = combuster(st4, spr.BRN, Vbar_45);
+st5 = duct(st5,spr.BRN);
+
+W_HPC = st4.h - st3.h;
+W_LPC = st3.h - st2.h;
+W_FAN = st2.h - st1.h;
+W_shaft1 = (W_LPC + W_FAN) / eta.SFT;
+
+st6 = turbine(st5, W_HPC, eta.HPT);
+
+
+
+
+
+
 
 %{
 Element Numbering
