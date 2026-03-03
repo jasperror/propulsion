@@ -122,12 +122,13 @@ function out = fan(in, pr, eta)
 
   out.T0 = T2;
   out.P0 = P2;
+  out.W = 
 
   [out.cp,out.h,out.s] = air_props(T2);
 
 end
 
-function out = compressor(in, pr, eta)
+function out = compressor(in, pr, eta_s)
   R = 0.287;
   out = in;
   P1 = in.P0;
@@ -140,7 +141,7 @@ function out = compressor(in, pr, eta)
 
   [~,h2s,~] = air_props(T2s);
 
-  h2 = h1 + (h2s - h1)/eta;
+  h2 = h1 + (h2s - h1)/eta_s;
 
   fun2 = @(T2) enthalpy_air(T2) - h2;
   T2 = fzero(fun2, T2s);
@@ -148,6 +149,7 @@ function out = compressor(in, pr, eta)
   out.T0 = T2;
   out.P0 = P2;  
   [out.cp,out.h,out.s] = air_props(T2);
+  out.W = dmdt_a*(h2-h1);
 end
 
 function out = turbine(in, W_req, eta)
@@ -175,31 +177,23 @@ function out = turbine(in, W_req, eta)
 end
 
 function out = duct(in, spr)
-  out = in;
-  out.P0 = in.P0 * spr;
-  out.T0 = in.T0;
-  [out.cp,out.h,out.s] = air_props(out.T0);
+    out = in;
+    out.P0 = in.P0 * spr;
+    out.T0 = in.T0;
+    [out.cp,out.h,out.s] = air_props(out.T0);
 end
 
-function out = combustor(in, spr)
+function out = combustor(in, spr, LHV, eta)
     % Outputs of previous stage in a struct, everything else passed?
     out.p0_out = spr*in.p0;
-
-    cea = % Load CEA results
-    i = 0; err = 1; T = in.T0;
-    while err > 0.001 && i < 1e4
-        i = i+1;
-        gamma = cea(?); % Use isentropic/ideal/gamma=1.4 if no cea data? First iteration?
-        M = cea(?);
-        q = cea(?);
-        t0_star = in.T0*(1+gamma*M^2)^2/(2*(gamma+1)*M^2*(1+(gamma-1)/2*M^2));
-        out.t0_out = t0_star*(in.T0/t0_star + q/(gamma*R/(gamma-1)*t0_star));
-        % then calculate updated gamma somehow? and calculate error
-        T =
-    end
-    out.dmdt_f =
-    out.f = 
-    out.Q_R = 
+    disp(['CEA Input Data: p=',num2str(in.p),' and T=',num2str(in.T)])
+    gamma = input("γ=");
+    c = input("c (sonic velocity)=");
+    M = 250/c;
+    out.Q_R = input("Q_R=");
+    t0_star = in.T0*(1+gamma*M^2)^2/(2*(gamma+1)*M^2*(1+(gamma-1)/2*M^2));
+    out.t0_out = t0_star*(in.T0/t0_star + out.Q_R/(gamma*R/(gamma-1)*t0_star));
+    out.dmdt_f = out.Q_R/LHV/eta;
 end
 
 function out = mixer(in1, in2, spr)
@@ -283,18 +277,23 @@ engine.fan = fan(engine.diffuser, FAN_pr, eta.FAN);
 engine.lpc = compressor(engine.fan, spr.LPC, eta.LPC);
 engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC);
 engine.combustor = combustor(engine.hpc, spr.BRN);
+engine.HPT = turbine(engine.combustor, engine.lpc.w+engine.fan.w, eta.HPT);
+engine.LPT = turbine(engine.HPT, engine.hpc.w, eta.LPT);
 engine.duct = duct(engine.fan, spr.BPD);
-engine.mixer = mixter(engine.duct, engine.combustor, spr.MXR);
-enigne.nozzle = nozzle(engine.mixer, spr.NOZ, eta.NOZ, R);
+engine.mixer = mixer(engine.duct, engine.combustor, spr.MXR);
+engine.afterburner = afterburner_inop(engine.mixer, spr.ABR);
+engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R);
 
 % parameters needed
 p_4 = engine.hpc.p;
 T_4 = engine.hpc.T;
 dmdt_f = engine.combustor.dmdt_f;
 Q_R = engine.combustor.Q_R;
-f = engine.combustor.f;
 u_e = engine.nozzle.u;
 p_e = engine.nozzle.p;
+% derived parameters
+dmdt_aH = (1-BPR)*dmdt_a;
+f = dmdt_f/dmdt_aH;
 
 % Output Parameters
 thrust = (dmdt_a+dmdt_f)*u_e-dmdt_a*u+pi*d_10^2/4*(p_e-p_a); % Thrust, N
