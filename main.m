@@ -52,10 +52,12 @@ spr.NOZ = 0.98; % Nozzle SPR, []
 %% Inlet ambient conditions
 
 gamma_guess = 1.4;
-flow.P0 = p_a * (1 + ((gamma_guess - 1)/2) * M_1^2)^(gamma_guess/(gamma_guess - 1)); % Ambiant static pressure, Pa
+flow.p0 = p_a * (1 + ((gamma_guess - 1)/2) * M_1^2)^(gamma_guess/(gamma_guess - 1)); % Ambiant static pressure, Pa
 flow.T0 = T_a * (1 + ((gamma_guess - 1)/2) * M_1^2); % Ambiant static temperature, K
 flow.mdot = dmdt_tot; % Mass flow rate, kg/s
 flow.M = M_1;
+flow.T = T_a;
+flow.p = p_a;
 [flow.cp, flow.h, flow.s] = air_props(flow.T0);
 
 %% Engine Components
@@ -98,22 +100,26 @@ end
 
 function out = diffuser(in,pr) %Isentropic and adiabatic
     out = in;
-    out.p0 = in.p0 * pr;
-    
-    % adiabadic -> T0_a = T0_2
+    out.p0 = in.p0 * pr; % does this need to use spr or is pr fine
+    out.T = in.T;
+    out.p = in.p * pr;
+     
 end
 
 function out = fan(in, pr, eta) 
     
     R = 0.287;   
     
-    P1 = in.p0;
-    P2 = P1 * pr;
+    P01 = in.p0;
+    P02 = P01 * pr;
+    P1 = in.p;
+    P2 = in.p * pr;
+    T1 = in.T;
+
+    [~,h1,s1,~] = air_props(T1);
     
-    [~,h1,s1,~] = air_props(in.T0);
-    
-    fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
-    T2s = fzero(fun, in.T0 * pr^0.3);
+    fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1); % now solving ideal static temp
+    T2s = fzero(fun, in.T * pr^0.3);
     
     [~,h2s,~,~] = air_props(T2s);
     
@@ -121,9 +127,25 @@ function out = fan(in, pr, eta)
     
     fun2 = @(T2) enthalpy_air(T2) - h2;
     T2 = fzero(fun2, T2s);
+    % above this is all static temp now i believe
     
-    out.T0 = T2;
-    out.p0 = P2;
+    [~,h01,s01,~] = air_props(T01);
+    
+    fun = @(T02s) entropy_air(T02s) - s01 - R*log(P02/P01); % now solving ideal static temp
+    T02s = fzero(fun, in.T0 * pr^0.3);
+    
+    [~,h02s,~,~] = air_props(T02s);
+    
+    h02 = h01 + (h02s - h01)/eta;
+    
+    fun2 = @(T2) enthalpy_air(T2) - h02;
+    T02 = fzero(fun2, T02s);
+
+    out.T = T2;
+    out.p = P2;
+    out.T0 = T02;
+    out.p0 = P02;
+    out.V = sqrt(2*(h02-h2));
     out.W = in.dmdt*(h2-h1);
     
     [out.cp,out.h,out.s] = air_props(T2);
@@ -133,13 +155,16 @@ end
 function out = compressor(in, pr, eta_s, dmdt_aH)
   R = 0.287;
   out = in;
-  P1 = in.p0;
-  P2 = P1 * pr;
+  P01 = in.p0;
+  P02 = P01 * pr;
+  T1 = in.T;
+  P1 = in.p;
+  P2 = P1*pr;
 
-  [~,h1,s1,~] = air_props(in.T0);
+  [~,h1,s1,~] = air_props(T1);
 
   fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
-  T2s = fzero(fun, in.T0 * (pr^0.3));
+  T2s = fzero(fun, in.T * (pr^0.3));
 
   [~,h2s,~,~] = air_props(T2s);
 
@@ -147,34 +172,58 @@ function out = compressor(in, pr, eta_s, dmdt_aH)
 
   fun2 = @(T2) enthalpy_air(T2) - h2;
   T2 = fzero(fun2, T2s);
+  %above this is static properties
+  fun = @(T02s) entropy_air(T02s) - s01 - R*log(P02/P01); % now solving ideal static temp
+  T02s = fzero(fun, in.T0 * pr^0.3);
+    
+  [~,h02s,~,~] = air_props(T02s);
+    
+  h02 = h01 + (h02s - h01)/eta;
+    
+  fun2 = @(T2) enthalpy_air(T2) - h02;
+  T02 = fzero(fun2, T02s);
 
-  out.T0 = T2;
-  out.p0 = P2;  
+  out.T = T2;
+  out.p = P2; 
+  out.p0 = P02;
+  out.T0 = T02;
   [out.cp,out.h,out.s] = air_props(T2);
   out.dmdt = dmdt_aH;
-  out.W = dmdt_aH*(h2-h1);
+  out.W = dmdt_aH*(h02-h01);
 end
 
-function out = turbine(in, w_req, eta)
+function out = turbine(in, w_req)
   R = 0.287;
 
   out = in;
 
-  [~,h1,s1,~] = air_props(in.T0);
+  [~,h01,s01,~] = air_props(in.T0);
 
-  h2 = h1 - w_req;
+  h02 = h01 - w_req;
+
+  fun = @(T02) enthalpy_air(T02) - h02;
+  T02 = fzero(fun, in.T0 - 300); 
+
+  [~,~,s02,~] = air_props(T02);
+
+  P02 = in.p0 * exp((s02 - s01)/R);
+
+  [~,~,s1,~] = air_props(in.T);
+
+  h2 = h02 - V^2 /2;    
 
   fun = @(T2) enthalpy_air(T2) - h2;
-  T2 = fzero(fun, in.T0 - 300);
+  T2 = fzero(fun, in.T - 300); 
 
   [~,~,s2,~] = air_props(T2);
 
-  P2 = in.p0 * exp((s2 - s1)/R);
+  P2 = in.p * exp((s2 - s1)/R);
 
-  P2 = in.p0 * (P2/in.p0)^eta;
 
-  out.T0 = T2;
-  out.p0 = P2;
+  out.T0 = T02;
+  out.p0 = P02;
+  out.p = P2;
+  out.T = T2;
 
   [out.cp,out.h,out.s] = air_props(T2);
 end
