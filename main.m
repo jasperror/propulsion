@@ -54,7 +54,7 @@ spr.NOZ = 0.98; % Nozzle SPR, []
 gamma_guess = 1.4;
 flow.p0 = p_a * (1 + ((gamma_guess - 1)/2) * M_1^2)^(gamma_guess/(gamma_guess - 1)); % Ambiant static pressure, Pa
 flow.T0 = T_a * (1 + ((gamma_guess - 1)/2) * M_1^2); % Ambiant static temperature, K
-flow.mdot = dmdt_tot; % Mass flow rate, kg/s
+flow.mdot = dmdt_a; % Mass flow rate, kg/s
 flow.M = M_1;
 flow.T = T_a;
 flow.p = p_a;
@@ -148,7 +148,7 @@ function out = fan(in, pr, eta)
 
 end
 
-function out = compressor(in, pr, eta_s, dmdt_aH)
+function out = compressor(in, pr, eta)
   R = 0.287;
   out = in;
   P01 = in.p0;
@@ -164,7 +164,7 @@ function out = compressor(in, pr, eta_s, dmdt_aH)
 
   [~,h2s,~,~] = air_props(T2s);
 
-  h2 = h1 + (h2s - h1)/eta_s;
+  h2 = h1 + (h2s - h1)/eta;
 
   fun2 = @(T2) enthalpy_air(T2) - h2;
   T2 = fzero(fun2, T2s);
@@ -183,7 +183,7 @@ function out = compressor(in, pr, eta_s, dmdt_aH)
   out.T0 = T02;
   out.p0 = P02;   
   out.dmdt = dmdt_aH;
-  out.W = dmdt_aH*(h02-h01);
+  out.W = in.mdot*(h02-h01);
 end
 
 function out = turbine(in, w_req, eta)
@@ -368,7 +368,7 @@ ambient.p0 = ambient.p*(1+(gamma_a-1)/2*M^2)^(gamma_a/(gamma_a-1));
 ambient.T0 = ambient.T*(1+(gamma_a-1)/2*M^2);
 
 engine.diffuser = diffuser(ambient, spr.INT);
-engine.fan = fan(engine.diffuser, FAN_pr, eta.FAN, dmdt_a);
+engine.fan = fan(engine.diffuser, FAN_pr, eta.FAN);
 core = engine.fan;                 %
 bypass = engine.fan;               %
 core.mdot = dmdt_a / (1 + BPR);    %
@@ -376,14 +376,14 @@ bypass.mdot = dmdt_a - core.mdot;  %  Needed for mixer code to run.
 bypass = duct(bypass, spr.BPD);    %  
 core = duct(core, spr.LPC);        %
 
-engine.lpc = compressor(core, spr.LPC, eta.LPC, dmdt_aH);
-engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC, dmdt_aH);
+engine.lpc = compressor(core, spr.LPC, eta.LPC);
+engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC);
 engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
 
-engine.HPT = turbine(engine.combustor, (engine.lpc.W+engine.fan.W)/dmdt_aH, eta.HPT);
-engine.LPT = turbine(engine.HPT, engine.hpc.W/dmdt_aH, eta.LPT);
+engine.HPT = turbine(engine.combustor, (engine.lpc.W+engine.fan.W)/core.mdot, eta.HPT);
+engine.LPT = turbine(engine.HPT, engine.hpc.W/core.mdot, eta.LPT);
 engine.duct = duct(engine.fan, spr.BPD);
-engine.mixer = mixer(engine.duct, engine.combustor, spr.MXR);
+engine.mixer = mixer(engine.LPT, bypass, spr.MXR);
 engine.afterburner = afterburner_inop(engine.mixer, spr.ABR);
 engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R);
 
