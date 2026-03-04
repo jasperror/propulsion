@@ -127,7 +127,7 @@ function out = fan(in, pr, eta)
     
     h2 = h1 + (h2s - h1) / eta;
     
-    fun2 = @(T2) enthalpy_air(T2) - h2;
+    fun2 = @(T2) enthalpy_air(T2) - h2; 
     T2 = fzero(fun2, T2s);
     
     [~,~,~,gamma2] = air_props(T2);
@@ -298,6 +298,13 @@ function out = nozzle(in, spr, eta, R)
     out.h0 = in.h0;
     out.p0 = in.p0*spr;
     out.T0 = in.T0;
+
+    [~,~,~,gamma] = air_props(in.T);
+    CPR = (2/(gamma+1))^(gamma/(gamma-1));
+    actual_PR = (2/(gamma+1))^(gamma/(gamma-1)) * ((1+gamma)/(1+gamma*in.M^2)) * (1+(gamma-1)/2*in.M^2)^(gamma/(gamma-1));
+    if CPR >= actual_pr
+        warning('Flow is chocked')
+
     i = 0; err = 1; tmp.T = in.T0; tmp.M = 0.5;
     disp(['p0=',num2str(out.p0*1e-5),', T0=',num2str(out.T0)])
     while err > 0.001 && i < 1e4
@@ -312,6 +319,7 @@ function out = nozzle(in, spr, eta, R)
         tmp.T = T;
         tmp.M = M;
     end
+
 end
 
 %% Engine Structure
