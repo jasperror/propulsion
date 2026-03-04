@@ -58,6 +58,7 @@ flow.mdot = dmdt_tot; % Mass flow rate, kg/s
 flow.M = M_1;
 flow.T = T_a;
 flow.p = p_a;
+flow.V = M_1*sqrt(gamma_guess*R*T_a);
 [flow.cp, flow.h, flow.s] = air_props(flow.T0);
 
 %% Engine Components
@@ -115,38 +116,33 @@ function out = fan(in, pr, eta)
     P1 = in.p;
     P2 = in.p * pr;
     T1 = in.T;
+    
 
     [~,h1,s1,~] = air_props(T1);
     
-    fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1); % now solving ideal static temp
-    T2s = fzero(fun, in.T * pr^0.3);
+    fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1); 
+    T2s = fzero(fun, T1 * pr^0.3);
     
     [~,h2s,~,~] = air_props(T2s);
     
-    h2 = h1 + (h2s - h1)/eta;
+    h2 = h1 + (h2s - h1) / eta;
     
     fun2 = @(T2) enthalpy_air(T2) - h2;
     T2 = fzero(fun2, T2s);
-    % above this is all static temp now i believe
-    
-    [~,h01,s01,~] = air_props(T01);
-    
-    fun = @(T02s) entropy_air(T02s) - s01 - R*log(P02/P01); % now solving ideal static temp
-    T02s = fzero(fun, in.T0 * pr^0.3);
-    
-    [~,h02s,~,~] = air_props(T02s);
-    
-    h02 = h01 + (h02s - h01)/eta;
-    
-    fun2 = @(T2) enthalpy_air(T2) - h02;
-    T02 = fzero(fun2, T02s);
+
+    [~,~,~,gamma2] = air_props(T2);
+    h01 = h1 + in.V^2 / 2;
+    h02 = h01 + (h2s - h1) / eta;
+    out.V = sqrt(2 * (h02 - h2));
+    out.M = out.V / sqrt(gamma2*R*T2);
+
+    T02 = T2 * ( 1 + (gamma2 - 1) / 2 * out.M^2 );
 
     out.T = T2;
     out.p = P2;
     out.T0 = T02;
     out.p0 = P02;
-    out.V = sqrt(2*(h02-h2));
-    out.W = in.dmdt*(h2-h1);
+    out.W = in.dmdt*(h02-h01);
     
     [out.cp,out.h,out.s] = air_props(T2);
 
@@ -172,60 +168,60 @@ function out = compressor(in, pr, eta_s, dmdt_aH)
 
   fun2 = @(T2) enthalpy_air(T2) - h2;
   T2 = fzero(fun2, T2s);
-  %above this is static properties
-  fun = @(T02s) entropy_air(T02s) - s01 - R*log(P02/P01); % now solving ideal static temp
-  T02s = fzero(fun, in.T0 * pr^0.3);
-    
-  [~,h02s,~,~] = air_props(T02s);
-    
-  h02 = h01 + (h02s - h01)/eta;
-    
-  fun2 = @(T2) enthalpy_air(T2) - h02;
-  T02 = fzero(fun2, T02s);
+
+  [~,~,~,gamma2] = air_props(T2);
+
+  h01 = h1 + in.V^2 / 2;
+  h02 = h01 + (h2s - h1) / eta;
+  out.V = sqrt(2 * (h02 - h2));
+  out.M = out.V / sqrt(gamma2*R*T2);
+
+  T02 = T2 * ( 1 + (gamma2 - 1) / 2 * out.M^2 );
 
   out.T = T2;
-  out.p = P2; 
-  out.p0 = P02;
+  out.p = P2;
   out.T0 = T02;
-  [out.cp,out.h,out.s] = air_props(T2);
+  out.p0 = P02;   
   out.dmdt = dmdt_aH;
   out.W = dmdt_aH*(h02-h01);
 end
 
-function out = turbine(in, w_req)
+function out = turbine(in, w_req, eta)
   R = 0.287;
 
   out = in;
 
-  [~,h01,s01,~] = air_props(in.T0);
+  [~,h1,s1,~] = air_props(in.T);
 
-  h02 = h01 - w_req;
+  h01 = h1 + in.V^2 / 2;
+  h02 = h01 - eta * w_req;
 
-  fun = @(T02) enthalpy_air(T02) - h02;
-  T02 = fzero(fun, in.T0 - 300); 
+  V_guess = in.V;
+  for i = 1:10
+      h2 = h02 - V_guess^2 / 2;
+      fun = @(T2) enthalpy_air(T2) - h2;
+      out.T = fzero(fun,in.T - 300);
 
-  [~,~,s02,~] = air_props(T02);
+      [~,~,s2,~] = air_props(out.T);
+      out.p = in.p * exp((s2 - s1) / R);
 
-  P02 = in.p0 * exp((s02 - s01)/R);
+      [~,~,~,gamma] = air_props(out.T);
+      out.p0 = in.p0 * exp((s2 - s1) / R);
+      out.T0 = out.T + V_guess^2 / (2 * (gamma / (gamma - 1)) * R);
+      V_new = sqrt(2 * (h02 - h2));
 
-  [~,~,s1,~] = air_props(in.T);
-
-  h2 = h02 - V^2 /2;    
-
-  fun = @(T2) enthalpy_air(T2) - h2;
-  T2 = fzero(fun, in.T - 300); 
-
-  [~,~,s2,~] = air_props(T2);
-
-  P2 = in.p * exp((s2 - s1)/R);
-
-
-  out.T0 = T02;
-  out.p0 = P02;
-  out.p = P2;
-  out.T = T2;
-
-  [out.cp,out.h,out.s] = air_props(T2);
+      if abs(V_new - V_guess) < 1e-6
+          break
+      end
+      V_guess = V_new;
+  end
+out.V = V_guess;
+out.M = out.V / sqrt(gamma * R * T2);
+out.T0 = out.T + out.V^2 / (2 * (gamma / (gamma - 1)) * R);
+out.p0 = in.p0 * exp((s2 - s1) / R); 
+out.p  = out.p0 / (1 + (gamma - 1)/2 * out.M^2)^(gamma / (gamma - 1));
+[out.cp, out.h, out.s, out.gamma] = air_props(out.T);
+out.dmdt = in.dmdt;
 end
 
 function out = duct(in, spr, BPR)
@@ -265,17 +261,17 @@ function out = mixer(core, bypass, spr)
   mdot_bypass = bypass.mdot;
   mdot_tot = mdot_bypass + mdot_core;
 
-  [~,hc,~,~] = air_props(core.T0);
-  [~,hb,~,~] = air_props(bypass.T0);
+  [~,hc,~,~] = air_props(core.T);
+  [~,hb,~,~] = air_props(bypass.T);
 
   hm = (mdot_core * hc + mdot_bypass * hb) / mdot_tot;
 
   fun = @(T) enthalpy_air(T) - hm;
-  T_mix = fzero(fun, (core.T0 + bypass.T0)/2);
+  T_mix = fzero(fun, (core.T + bypass.T)/2);
 
-  p_mix = min(core.P0,bypass.P0);
-  out.p0 = p_mix * spr;
-  out.T0 = T_mix;
+  p_mix = min(core.P, bypass.P);
+  out.p = p_mix * spr;
+  out.T = T_mix;
   out.dmdt = mdot_tot;
 end
 
