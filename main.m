@@ -224,12 +224,11 @@ out.p  = out.p0 / (1 + (gamma - 1)/2 * out.M^2)^(gamma / (gamma - 1));
 out.dmdt = in.dmdt;
 end
 
-function out = duct(in, spr, BPR)
+function out = duct(in, spr)
     out = in;
-    out.dmdt = in.dmdt*BPR;
+    out.dmdt = in.dmdt;
     out.p0 = in.p0 * spr;
     out.T0 = in.T0;
-    [out.cp,out.h,out.s] = air_props(out.T0);
 end
 
 function out = combustor(in, spr, LHV, eta, R)
@@ -259,12 +258,12 @@ function out = mixer(core, bypass, spr)
   out = core;
   mdot_core = core.mdot;
   mdot_bypass = bypass.mdot;
-  mdot_tot = mdot_bypass + mdot_core;
+  mdot_a = mdot_bypass + mdot_core;
 
   [~,hc,~,~] = air_props(core.T);
   [~,hb,~,~] = air_props(bypass.T);
 
-  hm = (mdot_core * hc + mdot_bypass * hb) / mdot_tot;
+  hm = (mdot_core * hc + mdot_bypass * hb) / mdot_a;
 
   fun = @(T) enthalpy_air(T) - hm;
   T_mix = fzero(fun, (core.T + bypass.T)/2);
@@ -272,7 +271,7 @@ function out = mixer(core, bypass, spr)
   p_mix = min(core.P, bypass.P);
   out.p = p_mix * spr;
   out.T = T_mix;
-  out.dmdt = mdot_tot;
+  out.dmdt = mdot_a;
 end
 
 function out = afterburner_inop(in, spr)
@@ -370,7 +369,14 @@ ambient.T0 = ambient.T*(1+(gamma_a-1)/2*M^2);
 
 engine.diffuser = diffuser(ambient, spr.INT);
 engine.fan = fan(engine.diffuser, FAN_pr, eta.FAN, dmdt_a);
-engine.lpc = compressor(engine.fan, spr.LPC, eta.LPC, dmdt_aH);
+core = engine.fan;                 %
+bypass = engine.fan;               %
+core.mdot = dmdt_a / (1 + BPR);    %
+bypass.mdot = dmdt_a - core.mdot;  %  Needed for mixer code to run.
+bypass = duct(bypass, spr.BPD);    %  
+core = duct(core, spr.LPC);        %
+
+engine.lpc = compressor(core, spr.LPC, eta.LPC, dmdt_aH);
 engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC, dmdt_aH);
 engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
 
