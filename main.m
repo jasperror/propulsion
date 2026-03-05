@@ -106,17 +106,18 @@ function out = diffuser(in, spr, Ar) % Assuming adiabatic
 
     i = 0; err = 1; tmp = in.T0;
     while err > 0.001 && i < 1e4
-        % disp(['DIFFUSER i=',num2str(i),', T=',num2str(tmp)])
+        disp(['DIFFUSER i=',num2str(i),', T=',num2str(tmp)])
         i = i+1;
         [~, ~, ~, gamma2] = air_props(tmp);
-        rho2 = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
-        M2 = Ar*in.rho/rho2*in.M*sqrt(gamma1*in.T)/sqrt(gamma2*tmp); % From mass conservation
-        out.p = out.p0*(1+(gamma2-1)/2*M2^2)^(gamma2/(1-gamma2));
-        out.T = in.T0/(1+(gamma2-1)/2*M2^2);
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
+        out.M = Ar*in.rho/out.rho*in.M*sqrt(gamma1*in.T)/sqrt(gamma2*tmp); % From mass conservation
+        out.p = out.p0*(1+(gamma2-1)/2*out.M^2)^(gamma2/(1-gamma2));
+        out.T = in.T0/(1+(gamma2-1)/2*out.M^2);
         err = abs((out.T-tmp)/out.T);
         tmp = out.T;
     end
-    out.V = in.rho/rho2*Ar*in.V;
+    out.V = in.rho/out.rho*Ar*in.V;
+    [~, ~, ~, out.gamma] = air_props(out.T);
 end
 
 function out = fan(in, pr, eta)
@@ -150,9 +151,29 @@ function out = fan(in, pr, eta)
     out.w = h02-h01;
     
     [out.cp,out.h,out.s] = air_props(T2);
-
 end
 
+function out = fan2(in, pr, spr, eta)
+    out.p = in.p*pr;
+    out.p0 = in.p0*spr;
+    out.dmdt = in.dmdt;
+    
+    out.T = in.T; i = 0;
+    while err > 0.001 && i < 1e4
+        i = i + 1;
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',(in.T+out.T)/2,'P',in.p); % assuming average temp
+        T2s = exp(R/cp*log(pr))*in.T;
+        h2s = py.CoolProp.CoolProp.PropsSI('H','T',T2s,'P',out.p);
+        h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p);
+        h2 = (h2s-h1)/eta+h1;
+        out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.P);
+        out.gamma = cp/py.CoolProp.CoolProp.PropsSI('CVMASS','T',out.T,'P',out.p);
+        out.M = sqrt(( (out.p0/out.p)^((out.gamma-1)/out.gamma)-1 )*2/(out.gamma-1));
+        out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+    end
+    out.V = out.M*sqrt(out.gamma*R*out.T);
+    out.w = h2-h1+0.5*(out.u^2-in.u^2);
+end
 
 function out = compressor(in, pr, eta)
 
@@ -206,30 +227,30 @@ function out = turbine(in, w_req, eta)
   h02 = h01 - eta * w_req;
 
   V_guess = in.V;
-  for i = 1:10
-      h2 = h02 - V_guess^2 / 2;
-      fun = @(T2) enthalpy_air(T2) - h2;
-      out.T = fzero(fun,in.T - 200);
-
-      [~,~,s2,~] = air_props(out.T);
-      out.p = in.p * exp((s2 - s1) / R);
-
-      [~,~,~,gamma] = air_props(out.T);
-      out.p0 = in.p0 * exp((s2 - s1) / R);
-      out.T0 = out.T + V_guess^2 / (2 * (gamma / (gamma - 1)) * R);
-      V_new = sqrt(2 * (h02 - h2));
-
-      if abs(V_new - V_guess) < 1e-6
-          break
-      end
-      V_guess = V_new;
-  end
-out.V = V_guess;
-out.M = out.V / sqrt(gamma * R * in.T);
-out.T0 = out.T + out.V^2 / (2 * (gamma / (gamma - 1)) * R);
-out.p0 = in.p0 * exp((s2 - s1) / R); 
-out.p  = out.p0 / (1 + (gamma - 1)/2 * out.M^2)^(gamma / (gamma - 1));
-[out.cp, out.h, out.s, out.gamma] = air_props(out.T);
+    for i = 1:10
+        h2 = h02 - V_guess^2 / 2;
+        fun = @(T2) enthalpy_air(T2) - h2;
+        out.T = fzero(fun,in.T - 200);
+        
+        [~,~,s2,~] = air_props(out.T);
+        out.p = in.p * exp((s2 - s1) / R);
+        
+        [~,~,~,gamma] = air_props(out.T);
+        out.p0 = in.p0 * exp((s2 - s1) / R);
+        out.T0 = out.T + V_guess^2 / (2 * (gamma / (gamma - 1)) * R);
+        V_new = sqrt(2 * (h02 - h2));
+        
+        if abs(V_new - V_guess) < 1e-6
+            break
+        end
+        V_guess = V_new;
+    end
+    out.V = V_guess;
+    out.M = out.V / sqrt(gamma * R * in.T);
+    out.T0 = out.T + out.V^2 / (2 * (gamma / (gamma - 1)) * R);
+    out.p0 = in.p0 * exp((s2 - s1) / R); 
+    out.p  = out.p0 / (1 + (gamma - 1)/2 * out.M^2)^(gamma / (gamma - 1));
+    [out.cp, out.h, out.s, out.gamma] = air_props(out.T);
 end
 
 function out = duct(in, spr)
@@ -240,95 +261,105 @@ function out = duct(in, spr)
     out.p0 = in.p0 * spr;
     out.T0 = in.T0;
 end
-function out = CEARUN(p, T)
-    % Not actually running CEA in real time :(
 
-    % Import CEA
-    CEA = load('CEA_Matrix.mat');
-    CEA = CEA.CEA; % dumb dumb matlab
-    Tad = reshape(CEA(:,3,:),[10, 10]);
-    c = reshape(CEA(:,4,:),[10, 10]);
-    h_BNR = reshape(CEA(:,5,:),[10, 10]);
-    gamma = reshape(CEA(:,6,:),[10, 10]);
-    CO = reshape(CEA(:,7,:),[10, 10]);
-    CO2 = reshape(CEA(:,8,:),[10, 10]);
-    NO = reshape(CEA(:,9,:),[10, 10]);
-    pv = [0.1, 1, 2, 5, 10, 15, 20, 25, 30, 50];
-    Tv = [200:100:1000, 2000];
-    [~, h_reac] = air_props(T);
+function out = CEARUN(p, T, CEA, Tv)
+
+    % Import CEA data
+    sz = size(CEA, [1, 3]);
+    Tad = reshape(CEA(:,4,:),sz);
+    c = reshape(CEA(:,7,:),sz);
+    h_BNR = reshape(CEA(:,5,:),sz);
+    gamma = reshape(CEA(:,6,:),sz);
+    CO = reshape(CEA(:,8,:),sz);
+    CO2 = reshape(CEA(:,9,:),sz);
+    NO = reshape(CEA(:,10,:),sz);
+    OF = reshape(CEA(1,2,:),[1, size(CEA,3)]);
+    pv = CEA(:,3,1)';
+    [~, h_air] = air_props(T);
+    h_fuel = -284117/151.9; % Jet-A enthalpy [kJ/kg]
 
     % Lookup Values
     if T < 200 % If outside of bounds then use min/max. There is probably a better way to do this
+        out.OF = CEA(1,2,1);
+        h_reac = (h_air*OF + h_fuel)/(1+OF);
         if p*1e-5 < 0.1
-            out.T = CEA(1,3,1);
-            out.c = CEA(1, 4, 1);
-            out.Q_R = abs(CEA(1, 5, 1)-h_reac);
+            out.T = CEA(1,4,1);
+            out.c = CEA(1, 7, 1);
+            out.Q_R = CEA(1, 5, 1)-h_reac;
             out.gamma = CEA(1,6,1);
-            out.CO2e = 10*CEA(1,7,1)+CEA(1,8,1);
-            out.NO = CEA(1,9,1);
+            out.CO2e = 10*CEA(1,8,1)+CEA(1,9,1);
+            out.NO = CEA(1,10,1);
         elseif p*1e-5 > 50
-            out.T = CEA(end,3,1);
-            out.c = CEA(end, 4, 1);
-            out.Q_R = abs(CEA(end, 5, 1)-h_reac);
+            out.T = CEA(end,4,1);
+            out.c = CEA(end, 7, 1);
+            out.Q_R = CEA(end, 5, 1)-h_reac;
             out.gamma = CEA(end,6,1);
-            out.CO2e = 10*CEA(end,7,1)+CEA(end,8,1);
-            out.NO = CEA(end,9,1);
+            out.CO2e = 10*CEA(end,8,1)+CEA(end,9,1);
+            out.NO = CEA(end,10,1);
         else
-            out.T = interp1(pv, CEA(:,3,1), p*1e-5);
-            out.c = interp1(pv, CEA(:,4,1), p*1e-5);
-            out.Q_R = abs(interp1(pv, CEA(:,5,1), p*1e-5)-h_reac);
+            out.T = interp1(pv, CEA(:,4,1), p*1e-5);
+            out.c = interp1(pv, CEA(:,7,1), p*1e-5);
+            out.Q_R = interp1(pv, CEA(:,5,1), p*1e-5)-h_reac;
             out.gamma = interp1(pv, CEA(:,6,1), p*1e-5);
-            out.CO2e = 10*interp1(pv, CEA(:,7,1), p*1e-5)+interp1(pv, CEA(:,8,1), p*1e-5);
-            out.NO = interp1(pv, CEA(:,9,1), p*1e-5);
+            out.CO2e = 10*interp1(pv, CEA(:,8,1), p*1e-5)+interp1(pv, CEA(:,9,1), p*1e-5);
+            out.NO = interp1(pv, CEA(:,10,1), p*1e-5);
         end
     elseif T > 2000
+        out.OF = CEA(1,2,end);
+        h_reac = (h_air*OF + h_fuel)/(1+OF);
         if p*1e-5 < 0.1
-            out.T = CEA(1,3,end);
-            out.c = CEA(1, 4, end);
-            out.Q_R = abs(CEA(1, 5, end)-h_reac);
+            out.T = CEA(1,4,end);
+            out.c = CEA(1, 7, end);
+            out.Q_R = CEA(1, 5, end)-h_reac;
             out.gamma = CEA(1,6,end);
-            out.CO2e = 10*CEA(1,7,end)+CEA(1,8,end);
-            out.NO = CEA(1,9,end);
+            out.CO2e = 10*CEA(1,8,end)+CEA(1,9,end);
+            out.NO = CEA(1,10,end);
         elseif p*1e-5 > 50
-            out.T = CEA(end,3,end);
-            out.c = CEA(end, 4, end);
-            out.Q_R = abs(CEA(end, 5, end)-h_reac);
+            out.T = CEA(end,4,end);
+            out.c = CEA(end, 7, end);
+            out.Q_R = CEA(end, 5, end)-h_reac;
             out.gamma = CEA(end,6,end);
-            out.CO2e = 10*CEA(end,7,end)+CEA(end,8,end);
-            out.NO = CEA(end,9,end);
+            out.CO2e = 10*CEA(end,8,end)+CEA(end,9,end);
+            out.NO = CEA(end,10,end);
         else
-            out.T = interp1(pv, CEA(:, 3, end), p*1e-5);
-            out.c = interp1(pv, CEA(:, 4, end), p*1e-5);
-            out.Q_R = abs(interp1(pv, CEA(:, 5, end), p*1e-5)-h_reac);
+            out.T = interp1(pv, CEA(:, 4, end), p*1e-5);
+            out.c = interp1(pv, CEA(:, 7, end), p*1e-5);
+            out.Q_R = interp1(pv, CEA(:, 5, end), p*1e-5)-h_reac;
             out.gamma = interp1(pv, CEA(:,6,end), p*1e-5);
-            out.CO2e = 10*interp1(pv, CEA(:,7,end), p*1e-5)+interp1(pv, CEA(:,8,end), p*1e-5);
-            out.NO = interp1(pv, CEA(:,9,end), p*1e-5);
+            out.CO2e = 10*interp1(pv, CEA(:,8,end), p*1e-5)+interp1(pv, CEA(:,9,end), p*1e-5);
+            out.NO = interp1(pv, CEA(:,10,end), p*1e-5);
         end
     else
+        out.OF = interp1(Tv, OF, T);
+        h_reac = (h_air*OF + h_fuel)/(1+OF);
         if p*1e-5 < 0.1
-            out.T = interp1(Tv, CEA(1,3,:), T);
-            out.c = interp1(Tv, CEA(1,4,:), T);
-            out.Q_R = abs(interp1(Tv, CEA(1,5,:), T)-h_reac);
+            out.T = interp1(Tv, CEA(1,4,:), T);
+            out.c = interp1(Tv, CEA(1,7,:), T);
+            out.Q_R = interp1(Tv, CEA(1,5,:), T)-h_reac;
             out.gamma = interp1(Tv, CEA(1,6,:), T);
-            out.CO2e = 10*interp1(Tv, CEA(1,7,:), T)+interp1(Tv, CEA(1,8,:), T);
-            out.NO = interp1(Tv, CEA(1,9,:), T);
+            out.CO2e = 10*interp1(Tv, CEA(1,8,:), T)+interp1(Tv, CEA(1,9,:), T);
+            out.NO = interp1(Tv, CEA(1,10,:), T);
         elseif p*1e-5 > 50
-            out.T = interp1(Tv, CEA(end,3,:), T);
-            out.c = interp1(Tv, CEA(end,4,:), T);
-            out.Q_R = abs(interp1(Tv, CEA(end,5,:), T)-h_reac);
+            out.T = interp1(Tv, CEA(end,4,:), T);
+            out.c = interp1(Tv, CEA(end,7,:), T);
+            out.Q_R = interp1(Tv, CEA(end,5,:), T)-h_reac;
             out.gamma = interp1(Tv, CEA(end,6,:), T);
-            out.CO2e = 10*interp1(Tv, CEA(end,7,:), T)+interp1(Tv, CEA(end,8,:), T);
-            out.NO = interp1(Tv, CEA(end,9,:), T);
+            out.CO2e = 10*interp1(Tv, CEA(end,8,:), T)+interp1(Tv, CEA(end,9,:), T);
+            out.NO = interp1(Tv, CEA(end,10,:), T);
         else % If parameters are OK then interpolate values from CEA
-            [X, Y] = meshgrid(pv, Tv);
+            [X, Y] = meshgrid(Tv, pv);
+            size(pv)
+            size(Tv)
+            size(X)
             out.T = interp2(X, Y, Tad, p*1e-5, T);
             out.c = interp2(X, Y, c, p*1e-5, T);
-            out.Q_R = abs(interp2(X, Y, h_BNR, p*1e-5, T)-h_reac); % There shouldn't really need to be an absolute value here but it is hard to get enthalpy for fuel
+            out.Q_R = interp2(X, Y, h_BNR, p*1e-5, T)-h_reac; % There shouldn't really need to be an absolute value here but it is hard to get enthalpy for fuel
             out.gamma = interp2(X, Y, gamma, p*1e-5, T);
             out.CO2e = 10*interp2(X, Y, CO, p*1e-5, T) + interp2(X, Y, CO2, p*1e-5, T);
             out.NO = interp2(X, Y, NO, p*1e-5, T);
         end
     end
+    out.Q_R = 1e3*out.Q_R;
 end
 
 function out = combustor(in, spr, LHV, eta, R)
@@ -343,7 +374,10 @@ function out = combustor(in, spr, LHV, eta, R)
         tmp = T;
     end
     p = in.p0*(1+(gamma-1)/2*M^2)^(-gamma/(gamma-1));
-    out = CEARUN(p, T);
+
+    CEA = load('CEA.mat');
+    out = CEARUN(p, T, CEA.COMB, [200, 500,
+        700, 800, 900, 1000, 2000]);
     out.p = p;
     out.p0 = spr*in.p0;
 
@@ -382,10 +416,9 @@ function out = afterburner_inop(in, spr)
     out.dmdt_f = 0;
 end
 
-function out = afterburner_op(in, spr, LHV, eta, R)
-    % T = 
-    % p = 
-    out = CEARUN(p, T);
+function out = afterburner_op(in, spr, LHV, eta)
+    CEA = load('CEA.mat');
+    out = CEARUN(in.p, in.T, CEA.ABR, [200, 500, 700, 900, 2000]);
     out.p0 = in.p0*spr;
     out.dmdt_f = out.Q_R/LHV/eta;
 end
@@ -521,6 +554,9 @@ core = duct(core, spr.LPC);
 
 engine.lpc = compressor(core, spr.LPC, eta.LPC);
 engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC);
+
+engine.hpc.T0 = 800;
+
 engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
 engine.hpt = turbine(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT);
 engine.lpt = turbine(engine.hpt, (core.dmdt*engine.lpc.w+ambient.dmdt*engine.fan.w)/core.dmdt/eta.SFT, eta.LPT);
