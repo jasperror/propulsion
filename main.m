@@ -416,20 +416,20 @@ function out = nozzle(in, spr, eta, R)
         return
     end
 
-    i = 0; err = 1; tmp.T = in.T0; tmp.M = 0.5;
-    disp(['p0=',num2str(out.p0*1e-5),', T0=',num2str(out.T0)])
-    while err > 0.001 && i < 1e4
-        i = i+1;
-        disp(['i=',num2str(i),', T=',num2str(tmp),', p=',num2str(p)])
-        [~, ~, ~, gamma] = air_props(tmp.T);
-        out.p = out.p0*(1+(gamma-1)/2*tmp.M^2)^(-gamma/(gamma-1));
-        out.u = sqrt(2*eta*gamma/(gamma-1)*R*in.T0*(1-(p/in.p0)^((gamma-1)/gamma)));
-        M = out.u/sqrt(gamma*R*tmp.T);
-        T = in.T0/(1+(gamma-1)/2*M^2);
-        err = sqrt(mean( ((T-tmp.T)/T)^2+((M-tmp.M)/M)^2 ));
-        tmp.T = T;
-        tmp.M = M;
-    end
+    % i = 0; err = 1; tmp.T = in.T0; tmp.M = 0.5;
+    % disp(['p0=',num2str(out.p0*1e-5),', T0=',num2str(out.T0)])
+    % while err > 0.001 && i < 1e4
+    %     i = i+1;
+    %     disp(['i=',num2str(i),', T=',num2str(tmp),', p=',num2str(p)])
+    %     [~, ~, ~, gamma] = air_props(tmp.T);
+    %     out.p = out.p0*(1+(gamma-1)/2*tmp.M^2)^(-gamma/(gamma-1));
+    %     out.u = sqrt(2*eta*gamma/(gamma-1)*R*in.T0*(1-(p/in.p0)^((gamma-1)/gamma)));
+    %     M = out.u/sqrt(gamma*R*tmp.T);
+    %     T = in.T0/(1+(gamma-1)/2*M^2);
+    %     err = sqrt(mean( ((T-tmp.T)/T)^2+((M-tmp.M)/M)^2 ));
+    %     tmp.T = T;
+    %     tmp.M = M;
+    % end
 
 end
 
