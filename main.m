@@ -205,7 +205,7 @@ function out = turbine(in, w_req, eta)
   for i = 1:10
       h2 = h02 - V_guess^2 / 2;
       fun = @(T2) enthalpy_air(T2) - h2;
-      out.T = fzero(fun,in.T - 300);
+      out.T = fzero(fun,in.T - 200);
 
       [~,~,s2,~] = air_props(out.T);
       out.p = in.p * exp((s2 - s1) / R);
