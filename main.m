@@ -129,7 +129,7 @@ function out = fan(in, pr, eta)
     
     [~,h1,s1,~] = air_props(T1);
     
-    fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1); 
+    fun = @(T2s) entropy_air(T2s) - s1 - R*log(pr); 
     T2s = fzero(fun, T1 * pr^0.3);
     
     [~,h2s,~,~] = air_props(T2s);
