@@ -51,15 +51,15 @@ spr.NOZ = 0.98; % Nozzle SPR, []
 
 %% Inlet ambient conditions
 
-gamma_guess = 1.4;
-flow.p0 = p_a * (1 + ((gamma_guess - 1)/2) * M_1^2)^(gamma_guess/(gamma_guess - 1)); % Ambiant static pressure, Pa
-flow.T0 = T_a * (1 + ((gamma_guess - 1)/2) * M_1^2); % Ambiant static temperature, K
-flow.mdot = dmdt_a; % Mass flow rate, kg/s
-flow.M = M_1;
-flow.T = T_a;
-flow.p = p_a;
-flow.V = M_1*sqrt(gamma_guess*R*T_a);
-[flow.cp, flow.h, flow.s] = air_props(flow.T0);
+% gamma_guess = 1.4;
+% flow.p0 = p_a * (1 + ((gamma_guess - 1)/2) * M_1^2)^(gamma_guess/(gamma_guess - 1)); % Ambiant static pressure, Pa
+% flow.T0 = T_a * (1 + ((gamma_guess - 1)/2) * M_1^2); % Ambiant static temperature, K
+% flow.mdot = dmdt_a; % Mass flow rate, kg/s
+% flow.M = M_1;
+% flow.T = T_a;
+% flow.p = p_a;
+% flow.V = M_1*sqrt(gamma_guess*R*T_a);
+% [flow.cp, flow.h, flow.s] = air_props(flow.T0);
 
 %% Engine Components
 
@@ -99,25 +99,34 @@ function h = enthalpy_air(T)
     [~,h,~,~] = air_props(T);
 end
 
-function out = diffuser(in,pr) %Isentropic and adiabatic
+function out = diffuser(in, spr, Ar) % Assuming adiabatic
     out = in;
-    out.p0 = in.p0 * pr; % does this need to use spr or is pr fine
-    out.T = in.T;
-    out.p = in.p * pr;
-     
+    out.p0 = in.p0 * spr;
+    [~, ~, ~, gamma1] = air_props(in.T);
+
+    i = 0; err = 1; tmp = in.T0;
+    while err > 0.001 && i < 1e4
+        % disp(['DIFFUSER i=',num2str(i),', T=',num2str(tmp)])
+        i = i+1;
+        [~, ~, ~, gamma2] = air_props(tmp);
+        rho2 = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
+        M2 = Ar*in.rho/rho2*in.M*sqrt(gamma1*in.T)/sqrt(gamma2*tmp); % From mass conservation
+        out.p = out.p0*(1+(gamma2-1)/2*M2^2)^(gamma2/(1-gamma2));
+        out.T = in.T0/(1+(gamma2-1)/2*M2^2);
+        err = abs((out.T-tmp)/out.T);
+        tmp = out.T;
+    end
+    out.V = in.rho/rho2*Ar*in.V;
 end
 
 function out = fan(in, pr, eta) 
     
     R = 0.287;   
     
-    P01 = in.p0;
-    P02 = P01 * pr;
-    P1 = in.p;
-    P2 = in.p * pr;
+    out.p0 = in.p0 * pr;
+    out.p = in.p * pr;
     T1 = in.T;
     
-
     [~,h1,s1,~] = air_props(T1);
     
     fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1); 
@@ -139,9 +148,7 @@ function out = fan(in, pr, eta)
     T02 = T2 * ( 1 + (gamma2 - 1) / 2 * out.M^2 );
 
     out.T = T2;
-    out.p = P2;
     out.T0 = T02;
-    out.p0 = P02;
     out.w = h02-h01;
     
     [out.cp,out.h,out.s] = air_props(T2);
@@ -184,8 +191,8 @@ function out = compressor(in, pr, eta)
   out.p = P2;
   out.T0 = T02;
   out.p0 = P02;   
-  out.dmdt = dmdt_aH;
-  out.W = in.mdot*(h02-h01);
+  out.dmdt = in.dmdt;
+  out.W = in.dmdt*(h02-h01);
   out.p0 = P02;
   out.W = h02-h01;
 
@@ -351,8 +358,8 @@ end
 function out = mixer(core, bypass, spr)
 % Assuming 100% mixing takes place
   out = core;
-  mdot_core = core.mdot;
-  mdot_bypass = bypass.mdot;
+  mdot_core = core.dmdt;
+  mdot_bypass = bypass.dmdt;
   mdot_a = mdot_bypass + mdot_core;
 
   [~,hc,~,~] = air_props(core.T);
@@ -375,8 +382,8 @@ function out = afterburner_inop(in, spr)
 end
 
 function out = afterburner_op(in, spr, LHV, eta, R)
-    T = 
-    p = 
+    % T = 
+    % p = 
     out = CEARUN(p, T);
     out.p0 = in.p0*spr;
     out.dmdt_f = out.Q_R/LHV/eta;
@@ -393,7 +400,7 @@ function out = nozzle(in, spr, eta, R)
     actual_PR = (2/(gamma+1))^(gamma/(gamma-1)) * ((1+gamma)/(1+gamma*in.M^2)) * (1+(gamma-1)/2*in.M^2)^(gamma/(gamma-1));
     if CPR >= actual_pr
         warning('Flow is chocked')
-
+    end
     i = 0; err = 1; tmp.T = in.T0; tmp.M = 0.5;
     disp(['p0=',num2str(out.p0*1e-5),', T0=',num2str(out.T0)])
     while err > 0.001 && i < 1e4
@@ -475,36 +482,38 @@ st6 = turbine(st5, W_HPC, eta.HPT);
 ambient.T = 15+273.15;
 ambient.p = 101.325e3;
 ambient.dmdt = 150;
+ambient.rho = py.CoolProp.CoolProp.PropsSI('D','T',ambient.T,'P',ambient.p,'Air');
 R = 287;
-cp_a = air_props(ambient.T);
-gamma_a = 1/(1-R/cp_a);
-M_a = 0.5;
-dmdt_aH = dmdt_a/(BPR+1);
-dmdt_aC = BPR*dmdt_a/(BPR+1);
-u = M_a*sqrt(gamma_a*R*ambient.T);
-ambient.p0 = ambient.p*(1+(gamma_a-1)/2*M_a^2)^(gamma_a/(gamma_a-1));
-ambient.T0 = ambient.T*(1+(gamma_a-1)/2*M_a^2);
+[~, ~, ~, ambient.gamma] = air_props(ambient.T);
+ambient.M = 0.5;
+ambient.V = ambient.M*sqrt(ambient.gamma*R*ambient.T);
+dmdt_aH = ambient.dmdt/(BPR+1);
+dmdt_aC = BPR*ambient.dmdt/(BPR+1);
+u = ambient.M*sqrt(ambient.gamma*R*ambient.T);
+ambient.p0 = ambient.p*(1+(ambient.gamma-1)/2*ambient.M^2)^(ambient.gamma/(ambient.gamma-1));
+ambient.T0 = ambient.T*(1+(ambient.gamma-1)/2*ambient.M^2);
+Ar = .95; % Assumed diffuser area ratio, Ain/Aout
 
-engine.diffuser = diffuser(ambient, spr.INT);
+engine.diffuser = diffuser(ambient, spr.INT, Ar);
 engine.fan = fan(engine.diffuser, FAN_pr, eta.FAN);
 core = engine.fan;                 %
 bypass = engine.fan;               %
-core.mdot = dmdt_a / (1 + BPR);    %
-bypass.mdot = dmdt_a - core.mdot;  %  Needed for mixer code to run.
+core.dmdt = ambient.dmdt / (1 + BPR);    %
+bypass.dmdt = ambient.dmdt - core.dmdt;  %  Needed for mixer code to run.
 bypass = duct(bypass, spr.BPD);    %  
 core = duct(core, spr.LPC);        %
 
 engine.lpc = compressor(core, spr.LPC, eta.LPC);
 engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC);
 engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
-
-engine.HPT = turbine(engine.combustor, (engine.lpc.W+engine.fan.W)/core.mdot, eta.HPT);
-engine.LPT = turbine(engine.HPT, engine.hpc.W/core.mdot, eta.LPT);
+%%
+engine.HPT = turbine(engine.combustor, (engine.lpc.W+engine.fan.W)/core.dmdt, eta.HPT);
+engine.LPT = turbine(engine.HPT, engine.hpc.W/core.dmdt, eta.LPT);
 engine.lpc = compressor(engine.fan, spr.LPC, eta.LPC);
 engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC);
 engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
 engine.HPT = turbine(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT);
-engine.LPT = turbine(engine.HPT, (core.mdot*engine.lpc.w+ambient.dmdt*engine.fan.w)/core.mdot/eta.SFT, eta.LPT);
+engine.LPT = turbine(engine.HPT, (core.dmdt*engine.lpc.w+ambient.dmdt*engine.fan.w)/core.dmdt/eta.SFT, eta.LPT);
 engine.duct = duct(engine.fan, spr.BPD);
 engine.mixer = mixer(engine.LPT, bypass, spr.MXR);
 engine.afterburner = afterburner_inop(engine.mixer, spr.ABR);
@@ -518,15 +527,15 @@ Q_R = engine.combustor.Q_R;
 u_e = engine.nozzle.u;
 p_e = engine.nozzle.p;
 % derived parameters
-f = dmdt_f/dmdt_a;
+f = dmdt_f/ambient.dmdt;
 
 % Output Parameters
-thrust = (dmdt_a+dmdt_f)*u_e-dmdt_a*u+pi*d_10^2/4*(p_e-p_a); % Thrust, N
-ST = thrust/dmdt_a; % Specific thrust, Ns/kg
+thrust = (ambient.dmdt+dmdt_f)*u_e-ambient.dmdt*u+pi*d_10^2/4*(p_e-p_a); % Thrust, N
+ST = thrust/ambient.dmdt; % Specific thrust, Ns/kg
 TSFC = dmdt_f/thrust; % Thrust-specific fuel consumption, kg/Ns
 
 eta_th = (1+f)*(u_e^2-u^2)/(2*f*Q_R); % Thermal efficiency, []
-eta_p = thrust*u/dmdt_a/((1+f)*(u_e^2/2)-u^2/2); % Propulsion efficiency, []
+eta_p = thrust*u/ambient.dmdt/((1+f)*(u_e^2/2)-u^2/2); % Propulsion efficiency, []
 eta_0 = eta_th*eta_p; % Overall efficiency, []
 
 LD = 10; % Estimate of cruise lift to drag ratio, []
