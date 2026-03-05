@@ -236,9 +236,97 @@ function out = duct(in, spr)
     out.p0 = in.p0 * spr;
     out.T0 = in.T0;
 end
+function out = CEARUN(p, T)
+    % Not actually running CEA in real time :(
+
+    % Import CEA
+    CEA = load('CEA_Matrix.mat');
+    Tad = reshape(CEA(:,3,:),[10, 10]);
+    c = reshape(CEA(:,4,:),[10, 10]);
+    h_BNR = reshape(CEA(:,5,:),[10, 10]);
+    gamma = reshape(CEA(:,6,:),[10, 10]);
+    CO = reshape(CEA(:,7,:),[10, 10]);
+    CO2 = reshape(CEA(:,8,:),[10, 10]);
+    NO = reshape(CEA(:,9,:),[10, 10]);
+    pv = [0.1, 1, 2, 5, 10, 15, 20, 25, 30, 50];
+    Tv = [200:100:1000, 2000];
+    [~, h_reac] = air_props(T);
+
+    % Lookup Values
+    if T < 200 % If outside of bounds then use min/max. There is probably a better way to do this
+        if p*1e-5 < 0.1
+            out.Tad = CEA(1,3,1);
+            out.c = CEA(1, 4, 1);
+            out.Q_R = abs(CEA(1, 5, 1)-h_reac);
+            out.gamma = CEA(1,6,1);
+            out.CO2e = 10*CEA(1,7,1)+CEA(1,8,1);
+            out.NO = CEA(1,9,1);
+        elseif p*1e-5 > 50
+            out.Tad = CEA(end,3,1);
+            out.c = CEA(end, 4, 1);
+            out.Q_R = abs(CEA(end, 5, 1)-h_reac);
+            out.gamma = CEA(end,6,1);
+            out.CO2e = 10*CEA(end,7,1)+CEA(end,8,1);
+            out.NO = CEA(end,9,1);
+        else
+            out.Tad = interp1(pv, CEA(:,3,1), p*1e-5);
+            out.c = interp1(pv, CEA(:,4,1), p*1e-5);
+            out.Q_R = abs(interp1(pv, CEA(:,5,1), p*1e-5)-h_reac);
+            out.gamma = interp1(pv, CEA(:,6,1), p*1e-5);
+            out.CO2e = 10*interp1(pv, CEA(:,7,1), p*1e-5)+interp1(pv, CEA(:,8,1), p*1e-5);
+            out.NO = interp1(pv, CEA(:,9,1), p*1e-5);
+        end
+    elseif T > 2000
+        if p*1e-5 < 0.1
+            out.Tad = CEA(1,3,end);
+            out.c = CEA(1, 4, end);
+            out.Q_R = abs(CEA(1, 5, end)-h_reac);
+            out.gamma = CEA(1,6,end);
+            out.CO2e = 10*CEA(1,7,end)+CEA(1,8,end);
+            out.NO = CEA(1,9,end);
+        elseif p*1e-5 > 50
+            out.Tad = CEA(end,3,end);
+            out.c = CEA(end, 4, end);
+            out.Q_R = abs(CEA(end, 5, end)-h_reac);
+            out.gamma = CEA(end,6,end);
+            out.CO2e = 10*CEA(end,7,end)+CEA(end,8,end);
+            out.NO = CEA(end,9,end);
+        else
+            out.Tad = interp1(pv, CEA(:, 3, end), p*1e-5);
+            out.c = interp1(pv, CEA(:, 4, end), p*1e-5);
+            out.Q_R = abs(interp1(pv, CEA(:, 5, end), p*1e-5)-h_reac);
+            out.gamma = interp1(pv, CEA(:,6,end), p*1e-5);
+            out.CO2e = 10*interp1(pv, CEA(:,7,end), p*1e-5)+interp1(pv, CEA(:,8,end), p*1e-5);
+            out.NO = interp1(pv, CEA(:,9,end), p*1e-5);
+        end
+    else
+        if p*1e-5 < 0.1
+            out.Tad = interp1(Tv, CEA(1,3,:), T);
+            out.c = interp1(Tv, CEA(1,4,:), T);
+            out.Q_R = abs(interp1(Tv, CEA(1,5,:), T)-h_reac);
+            out.gamma = interp1(Tv, CEA(1,6,:), T);
+            out.CO2e = 10*interp1(Tv, CEA(1,7,:), T)+interp1(Tv, CEA(1,8,:), T);
+            out.NO = interp1(Tv, CEA(1,9,:), T);
+        elseif p*1e-5 > 50
+            out.Tad = interp1(Tv, CEA(end,3,:), T);
+            out.c = interp1(Tv, CEA(end,4,:), T);
+            out.Q_R = abs(interp1(Tv, CEA(end,5,:), T)-h_reac);
+            out.gamma = interp1(Tv, CEA(end,6,:), T);
+            out.CO2e = 10*interp1(Tv, CEA(end,7,:), T)+interp1(Tv, CEA(end,8,:), T);
+            out.NO = interp1(Tv, CEA(end,9,:), T);
+        else % If parameters are OK then interpolate values from CEA
+            [X, Y] = meshgrid(pv, Tv);
+            out.Tad = interp2(X, Y, Tad, p*1e-5, T);
+            out.c = interp2(X, Y, c, p*1e-5, T);
+            out.Q_R = abs(interp2(X, Y, h_BNR, p*1e-5, T)-h_reac); % There shouldn't really need to be an absolute value here but it is hard to get enthalpy for fuel
+            out.gamma = interp2(X, Y, gamma, p*1e-5, T);
+            out.CO2e = 10*interp2(X, Y, CO, p*1e-5, T) + interp2(X, Y, CO2, p*1e-5, T);
+            out.NO = interp2(X, Y, NO, p*1e-5, T);
+        end
+    end
+end
 
 function out = combustor(in, spr, LHV, eta, R)
-    disp(['p0=',num2str(in.p0),', T0=',num2str(in.T0)])
     i = 0; err = 1; tmp = in.T0;
     while err > 0.001 && i < 1e4
         disp(['i=',num2str(i),', T=',num2str(tmp)])
@@ -250,17 +338,13 @@ function out = combustor(in, spr, LHV, eta, R)
         tmp = T;
     end
     p = in.p0*(1+(gamma-1)/2*M^2)^(-gamma/(gamma-1));
-    disp(['CEA Input Data: p=',num2str(p*1e-5),' and T=',num2str(T)])
-    out.phi = input("φ=");
-    out.T_ad = input("T_ad=");
-    gamma = input("γ=");
-    c = input("c [m/s]=");
-    M = 250/c;
-    [~, h_reac] = air_props(T);
-    out.Q_R = -(input("h_prod=")-h_reac);
+    out = CEARUN(p, T);
     out.p0 = spr*in.p0;
-    t0_star = in.T0*(1+gamma*M^2)^2/(2*(gamma+1)*M^2*(1+(gamma-1)/2*M^2));
-    out.T0 = t0_star*(in.T0/t0_star + out.Q_R/(gamma*R/(gamma-1)*t0_star));
+
+    % Calculate resulting parameters
+    out.M = 250/out.c;
+    t0_star = in.T0*(1+out.gamma*out.M^2)^2/(2*(out.gamma+1)*out.M^2*(1+(out.gamma-1)/2*out.M^2));
+    out.T0 = t0_star*(in.T0/t0_star + out.Q_R/(out.gamma*R/(out.gamma-1)*t0_star));
     out.dmdt_f = out.Q_R/LHV/eta;
 end
 
@@ -287,10 +371,15 @@ end
 
 function out = afterburner_inop(in, spr)
     out = duct(in, spr);
+    out.dmdt_f = 0;
 end
 
-function out = afterburner_op()
-    %TBD probably another combustor
+function out = afterburner_op(in, spr, LHV, eta, R)
+    T = 
+    p = 
+    out = CEARUN(p, T);
+    out.p0 = in.p0*spr;
+    out.dmdt_f = out.Q_R/LHV/eta;
 end
 
 function out = nozzle(in, spr, eta, R)
@@ -390,7 +479,8 @@ R = 287;
 cp_a = air_props(ambient.T);
 gamma_a = 1/(1-R/cp_a);
 M_a = 0.5;
-dmdt_aH = (1-BPR)*dmdt_a;
+dmdt_aH = dmdt_a/(BPR+1);
+dmdt_aC = BPR*dmdt_a/(BPR+1);
 u = M_a*sqrt(gamma_a*R*ambient.T);
 ambient.p0 = ambient.p*(1+(gamma_a-1)/2*M_a^2)^(gamma_a/(gamma_a-1));
 ambient.T0 = ambient.T*(1+(gamma_a-1)/2*M_a^2);
@@ -423,12 +513,12 @@ engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R);
 % parameters needed
 p_4 = engine.hpc.p;
 T_4 = engine.hpc.T;
-dmdt_f = engine.combustor.dmdt_f;
+dmdt_f = engine.combustor.dmdt_f+engine.afterburner.dmdt_f;
 Q_R = engine.combustor.Q_R;
 u_e = engine.nozzle.u;
 p_e = engine.nozzle.p;
 % derived parameters
-f = dmdt_f/dmdt_aH;
+f = dmdt_f/dmdt_a;
 
 % Output Parameters
 thrust = (dmdt_a+dmdt_f)*u_e-dmdt_a*u+pi*d_10^2/4*(p_e-p_a); % Thrust, N
