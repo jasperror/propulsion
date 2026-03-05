@@ -64,7 +64,7 @@ spr.NOZ = 0.98; % Nozzle SPR, []
 %% Engine Components
 
 function [cp,h,s,gamma] = air_props(T)
-    R = 0.287;  % KJ/kg-K
+    R = 287;  % J/kg-K
     
     if T <= 1000
         a1 = 3.78245636;
@@ -121,7 +121,7 @@ end
 
 function out = fan(in, pr, eta) 
     
-    R = 0.287;   
+    R = 287;   
     
     out.p0 = in.p0 * pr;
     out.p = in.p * pr;
@@ -129,7 +129,7 @@ function out = fan(in, pr, eta)
     
     [~,h1,s1,~] = air_props(T1);
     
-    fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1); 
+    fun = @(T2s) entropy_air(T2s) - s1 - R*log(pr); 
     T2s = fzero(fun, T1 * pr^0.3);
     
     [~,h2s,~,~] = air_props(T2s);
@@ -158,7 +158,7 @@ end
 
 function out = compressor(in, pr, eta)
 
-  R = 0.287;
+  R = 287;
   out = in;
   P01 = in.p0;
   P02 = P01 * pr;
@@ -199,7 +199,7 @@ function out = compressor(in, pr, eta)
 end
 
 function out = turbine(in, w_req, eta)
-  R = 0.287;
+  R = 287;
 
   out = in;
 
