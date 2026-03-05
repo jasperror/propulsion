@@ -212,7 +212,7 @@ function out = turbine(in, w_req, eta)
   for i = 1:10
       h2 = h02 - V_guess^2 / 2;
       fun = @(T2) enthalpy_air(T2) - h2;
-      out.T = fzero(fun,in.T - 300);
+      out.T = fzero(fun,in.T - 200);
 
       [~,~,s2,~] = air_props(out.T);
       out.p = in.p * exp((s2 - s1) / R);
@@ -394,13 +394,26 @@ function out = nozzle(in, spr, eta, R)
     out.h0 = in.h0;
     out.p0 = in.p0*spr;
     out.T0 = in.T0;
+    M = in.M;
 
     [~,~,~,gamma] = air_props(in.T);
     CPR = (2/(gamma+1))^(gamma/(gamma-1));
     actual_PR = (2/(gamma+1))^(gamma/(gamma-1)) * ((1+gamma)/(1+gamma*in.M^2)) * (1+(gamma-1)/2*in.M^2)^(gamma/(gamma-1));
     if CPR >= actual_pr
         warning('Flow is chocked')
+        T0_star = T0 / ((2*(gamma+1)*M^2 * (1 + ((gamma-1)/2)*M^2)) / (1 + gamma*M^2)^2);
+        p0_star = in.p0*CPR;
+        T_star = in.T / (((1 + gamma) / (1 + gamma*M^2))^2 * M^2);
+        p_star = in.p / ((1 + gamma) / (1 + gamma*M^2));
+        out.T = T_star;
+        out.T0 = T0_star;
+        out.p = p_star;
+        out.p0 = p0_star;
+        out.M = 1;
+        out.u = sqrt(gamma * R * T_star);
+        return
     end
+
     i = 0; err = 1; tmp.T = in.T0; tmp.M = 0.5;
     disp(['p0=',num2str(out.p0*1e-5),', T0=',num2str(out.T0)])
     while err > 0.001 && i < 1e4
