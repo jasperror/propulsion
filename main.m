@@ -119,18 +119,16 @@ function out = diffuser(in, spr, Ar) % Assuming adiabatic
     out.V = in.rho/rho2*Ar*in.V;
 end
 
-function out = fan(in, pr, eta) 
-    
+function out = fan(in, pr, eta)
     R = 0.287;   
     
     out.p0 = in.p0 * pr;
     out.p = in.p * pr;
-    T1 = in.T;
     
-    [~,h1,s1,~] = air_props(T1);
+    [~,h1,s1,~] = air_props(in.T);
     
     fun = @(T2s) entropy_air(T2s) - s1 - R*log(pr); 
-    T2s = fzero(fun, T1 * pr^0.3);
+    T2s = fzero(fun, in.T * pr^0.3);
     
     [~,h2s,~,~] = air_props(T2s);
     
@@ -192,9 +190,8 @@ function out = compressor(in, pr, eta)
   out.T0 = T02;
   out.p0 = P02;   
   out.dmdt = in.dmdt;
-  out.W = in.dmdt*(h02-h01);
   out.p0 = P02;
-  out.W = h02-h01;
+  out.w = h02-h01;
 
 end
 
@@ -228,7 +225,7 @@ function out = turbine(in, w_req, eta)
       V_guess = V_new;
   end
 out.V = V_guess;
-out.M = out.V / sqrt(gamma * R * T2);
+out.M = out.V / sqrt(gamma * R * in.T);
 out.T0 = out.T + out.V^2 / (2 * (gamma / (gamma - 1)) * R);
 out.p0 = in.p0 * exp((s2 - s1) / R); 
 out.p  = out.p0 / (1 + (gamma - 1)/2 * out.M^2)^(gamma / (gamma - 1));
@@ -248,6 +245,7 @@ function out = CEARUN(p, T)
 
     % Import CEA
     CEA = load('CEA_Matrix.mat');
+    CEA = CEA.CEA; % dumb dumb matlab
     Tad = reshape(CEA(:,3,:),[10, 10]);
     c = reshape(CEA(:,4,:),[10, 10]);
     h_BNR = reshape(CEA(:,5,:),[10, 10]);
@@ -262,21 +260,21 @@ function out = CEARUN(p, T)
     % Lookup Values
     if T < 200 % If outside of bounds then use min/max. There is probably a better way to do this
         if p*1e-5 < 0.1
-            out.Tad = CEA(1,3,1);
+            out.T = CEA(1,3,1);
             out.c = CEA(1, 4, 1);
             out.Q_R = abs(CEA(1, 5, 1)-h_reac);
             out.gamma = CEA(1,6,1);
             out.CO2e = 10*CEA(1,7,1)+CEA(1,8,1);
             out.NO = CEA(1,9,1);
         elseif p*1e-5 > 50
-            out.Tad = CEA(end,3,1);
+            out.T = CEA(end,3,1);
             out.c = CEA(end, 4, 1);
             out.Q_R = abs(CEA(end, 5, 1)-h_reac);
             out.gamma = CEA(end,6,1);
             out.CO2e = 10*CEA(end,7,1)+CEA(end,8,1);
             out.NO = CEA(end,9,1);
         else
-            out.Tad = interp1(pv, CEA(:,3,1), p*1e-5);
+            out.T = interp1(pv, CEA(:,3,1), p*1e-5);
             out.c = interp1(pv, CEA(:,4,1), p*1e-5);
             out.Q_R = abs(interp1(pv, CEA(:,5,1), p*1e-5)-h_reac);
             out.gamma = interp1(pv, CEA(:,6,1), p*1e-5);
@@ -285,21 +283,21 @@ function out = CEARUN(p, T)
         end
     elseif T > 2000
         if p*1e-5 < 0.1
-            out.Tad = CEA(1,3,end);
+            out.T = CEA(1,3,end);
             out.c = CEA(1, 4, end);
             out.Q_R = abs(CEA(1, 5, end)-h_reac);
             out.gamma = CEA(1,6,end);
             out.CO2e = 10*CEA(1,7,end)+CEA(1,8,end);
             out.NO = CEA(1,9,end);
         elseif p*1e-5 > 50
-            out.Tad = CEA(end,3,end);
+            out.T = CEA(end,3,end);
             out.c = CEA(end, 4, end);
             out.Q_R = abs(CEA(end, 5, end)-h_reac);
             out.gamma = CEA(end,6,end);
             out.CO2e = 10*CEA(end,7,end)+CEA(end,8,end);
             out.NO = CEA(end,9,end);
         else
-            out.Tad = interp1(pv, CEA(:, 3, end), p*1e-5);
+            out.T = interp1(pv, CEA(:, 3, end), p*1e-5);
             out.c = interp1(pv, CEA(:, 4, end), p*1e-5);
             out.Q_R = abs(interp1(pv, CEA(:, 5, end), p*1e-5)-h_reac);
             out.gamma = interp1(pv, CEA(:,6,end), p*1e-5);
@@ -308,14 +306,14 @@ function out = CEARUN(p, T)
         end
     else
         if p*1e-5 < 0.1
-            out.Tad = interp1(Tv, CEA(1,3,:), T);
+            out.T = interp1(Tv, CEA(1,3,:), T);
             out.c = interp1(Tv, CEA(1,4,:), T);
             out.Q_R = abs(interp1(Tv, CEA(1,5,:), T)-h_reac);
             out.gamma = interp1(Tv, CEA(1,6,:), T);
             out.CO2e = 10*interp1(Tv, CEA(1,7,:), T)+interp1(Tv, CEA(1,8,:), T);
             out.NO = interp1(Tv, CEA(1,9,:), T);
         elseif p*1e-5 > 50
-            out.Tad = interp1(Tv, CEA(end,3,:), T);
+            out.T = interp1(Tv, CEA(end,3,:), T);
             out.c = interp1(Tv, CEA(end,4,:), T);
             out.Q_R = abs(interp1(Tv, CEA(end,5,:), T)-h_reac);
             out.gamma = interp1(Tv, CEA(end,6,:), T);
@@ -323,7 +321,7 @@ function out = CEARUN(p, T)
             out.NO = interp1(Tv, CEA(end,9,:), T);
         else % If parameters are OK then interpolate values from CEA
             [X, Y] = meshgrid(pv, Tv);
-            out.Tad = interp2(X, Y, Tad, p*1e-5, T);
+            out.T = interp2(X, Y, Tad, p*1e-5, T);
             out.c = interp2(X, Y, c, p*1e-5, T);
             out.Q_R = abs(interp2(X, Y, h_BNR, p*1e-5, T)-h_reac); % There shouldn't really need to be an absolute value here but it is hard to get enthalpy for fuel
             out.gamma = interp2(X, Y, gamma, p*1e-5, T);
@@ -346,13 +344,16 @@ function out = combustor(in, spr, LHV, eta, R)
     end
     p = in.p0*(1+(gamma-1)/2*M^2)^(-gamma/(gamma-1));
     out = CEARUN(p, T);
+    out.p = p;
     out.p0 = spr*in.p0;
 
     % Calculate resulting parameters
-    out.M = 250/out.c;
+    out.V = 250;
+    out.M = out.V/out.c;
     t0_star = in.T0*(1+out.gamma*out.M^2)^2/(2*(out.gamma+1)*out.M^2*(1+(out.gamma-1)/2*out.M^2));
     out.T0 = t0_star*(in.T0/t0_star + out.Q_R/(out.gamma*R/(out.gamma-1)*t0_star));
     out.dmdt_f = out.Q_R/LHV/eta;
+    out.dmdt = out.dmdt_f+in.dmdt;
 end
 
 function out = mixer(core, bypass, spr)
@@ -370,7 +371,7 @@ function out = mixer(core, bypass, spr)
   fun = @(T) enthalpy_air(T) - hm;
   T_mix = fzero(fun, (core.T + bypass.T)/2);
 
-  p_mix = min(core.P, bypass.P);
+  p_mix = min(core.p, bypass.p);
   out.p = p_mix * spr;
   out.T = T_mix;
   out.dmdt = mdot_a;
@@ -391,7 +392,8 @@ end
 
 function out = nozzle(in, spr, eta, R)
 % need to check for choked flow
-    out.h0 = in.h0;
+    out.h0 = in.h+in.V^2/2;
+    out.h = in.h;
     out.p0 = in.p0*spr;
     out.T0 = in.T0;
     M = in.M;
@@ -399,7 +401,7 @@ function out = nozzle(in, spr, eta, R)
     [~,~,~,gamma] = air_props(in.T);
     CPR = (2/(gamma+1))^(gamma/(gamma-1));
     actual_PR = (2/(gamma+1))^(gamma/(gamma-1)) * ((1+gamma)/(1+gamma*in.M^2)) * (1+(gamma-1)/2*in.M^2)^(gamma/(gamma-1));
-    if CPR >= actual_pr
+    if CPR >= actual_PR
         warning('Flow is chocked')
         T0_star = T0 / ((2*(gamma+1)*M^2 * (1 + ((gamma-1)/2)*M^2)) / (1 + gamma*M^2)^2);
         p0_star = in.p0*CPR;
@@ -509,26 +511,20 @@ Ar = .95; % Assumed diffuser area ratio, Ain/Aout
 
 engine.diffuser = diffuser(ambient, spr.INT, Ar);
 engine.fan = fan(engine.diffuser, FAN_pr, eta.FAN);
-core = engine.fan;                 %
-bypass = engine.fan;               %
-core.dmdt = ambient.dmdt / (1 + BPR);    %
-bypass.dmdt = ambient.dmdt - core.dmdt;  %  Needed for mixer code to run.
-bypass = duct(bypass, spr.BPD);    %  
-core = duct(core, spr.LPC);        %
+
+core = engine.fan;
+bypass = engine.fan;
+core.dmdt = ambient.dmdt / (1 + BPR);
+bypass.dmdt = ambient.dmdt - core.dmdt;
+bypass = duct(bypass, spr.BPD); 
+core = duct(core, spr.LPC);
 
 engine.lpc = compressor(core, spr.LPC, eta.LPC);
 engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC);
 engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
-%%
-engine.HPT = turbine(engine.combustor, (engine.lpc.W+engine.fan.W)/core.dmdt, eta.HPT);
-engine.LPT = turbine(engine.HPT, engine.hpc.W/core.dmdt, eta.LPT);
-engine.lpc = compressor(engine.fan, spr.LPC, eta.LPC);
-engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC);
-engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
-engine.HPT = turbine(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT);
-engine.LPT = turbine(engine.HPT, (core.dmdt*engine.lpc.w+ambient.dmdt*engine.fan.w)/core.dmdt/eta.SFT, eta.LPT);
-engine.duct = duct(engine.fan, spr.BPD);
-engine.mixer = mixer(engine.LPT, bypass, spr.MXR);
+engine.hpt = turbine(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT);
+engine.lpt = turbine(engine.hpt, (core.dmdt*engine.lpc.w+ambient.dmdt*engine.fan.w)/core.dmdt/eta.SFT, eta.LPT);
+engine.mixer = mixer(engine.lpt, bypass, spr.MXR);
 engine.afterburner = afterburner_inop(engine.mixer, spr.ABR);
 engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R);
 
