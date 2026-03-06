@@ -47,6 +47,7 @@ spr.MXR = 0.97; % Mixer SPR, []
 spr.BPD = 0.96; % Bypass duct SPR, []
 spr.HPC = 0.99; % HPC duct SPR, []
 spr.ABR = 0.98; % Afterburner duct SPR, []
+spr.ABRON = 0.95; % Afterburner operational SPR, []
 spr.NOZ = 0.98; % Nozzle SPR, []
 
 %% Inlet ambient conditions
@@ -226,21 +227,24 @@ function out = CEARUN(p, T, CEA, Tv)
         if p*1e-5 < 0.1
             out.T = CEA(1,4,1);
             out.c = CEA(1, 7, 1);
-            out.Q_R = CEA(1, 5, 1)-h_reac;
+            out.h = CEA(1, 5, 1);
+            out.Q_R = out.h-h_reac;
             out.gamma = CEA(1,6,1);
             out.CO2e = 10*CEA(1,8,1)+CEA(1,9,1);
             out.NO = CEA(1,10,1);
         elseif p*1e-5 > 50
             out.T = CEA(end,4,1);
             out.c = CEA(end, 7, 1);
-            out.Q_R = CEA(end, 5, 1)-h_reac;
+            out.h = CEA(end, 5, 1);
+            out.Q_R = out.h-h_reac;
             out.gamma = CEA(end,6,1);
             out.CO2e = 10*CEA(end,8,1)+CEA(end,9,1);
             out.NO = CEA(end,10,1);
         else
             out.T = interp1(pv, CEA(:,4,1), p*1e-5);
             out.c = interp1(pv, CEA(:,7,1), p*1e-5);
-            out.Q_R = interp1(pv, CEA(:,5,1), p*1e-5)-h_reac;
+            out.h = interp1(pv, CEA(:,5,1), p*1e-5);
+            out.Q_R = out.h-h_reac;
             out.gamma = interp1(pv, CEA(:,6,1), p*1e-5);
             out.CO2e = 10*interp1(pv, CEA(:,8,1), p*1e-5)+interp1(pv, CEA(:,9,1), p*1e-5);
             out.NO = interp1(pv, CEA(:,10,1), p*1e-5);
@@ -252,21 +256,24 @@ function out = CEARUN(p, T, CEA, Tv)
         if p*1e-5 < 0.1
             out.T = CEA(1,4,end);
             out.c = CEA(1, 7, end);
-            out.Q_R = CEA(1, 5, end)-h_reac;
+            out.h = CEA(1, 5, end);
+            out.Q_R = out.h-h_reac;
             out.gamma = CEA(1,6,end);
             out.CO2e = 10*CEA(1,8,end)+CEA(1,9,end);
             out.NO = CEA(1,10,end);
         elseif p*1e-5 > 50
             out.T = CEA(end,4,end);
             out.c = CEA(end, 7, end);
-            out.Q_R = CEA(end, 5, end)-h_reac;
+            out.h = CEA(end, 5, end);
+            out.Q_R = out.h-h_reac;
             out.gamma = CEA(end,6,end);
             out.CO2e = 10*CEA(end,8,end)+CEA(end,9,end);
             out.NO = CEA(end,10,end);
         else
             out.T = interp1(pv, CEA(:, 4, end), p*1e-5);
             out.c = interp1(pv, CEA(:, 7, end), p*1e-5);
-            out.Q_R = interp1(pv, CEA(:, 5, end), p*1e-5)-h_reac;
+            out.h = interp1(pv, CEA(:, 5, end), p*1e-5);
+            out.Q_R = out.h-h_reac;
             out.gamma = interp1(pv, CEA(:,6,end), p*1e-5);
             out.CO2e = 10*interp1(pv, CEA(:,8,end), p*1e-5)+interp1(pv, CEA(:,9,end), p*1e-5);
             out.NO = interp1(pv, CEA(:,10,end), p*1e-5);
@@ -278,14 +285,16 @@ function out = CEARUN(p, T, CEA, Tv)
         if p*1e-5 < 0.1
             out.T = interp1(Tv, CEA(1,4,:), T);
             out.c = interp1(Tv, CEA(1,7,:), T);
-            out.Q_R = interp1(Tv, CEA(1,5,:), T)-h_reac;
+            out.h = interp1(Tv, CEA(1,5,:), T);
+            out.Q_R = out.h-h_reac;
             out.gamma = interp1(Tv, CEA(1,6,:), T);
             out.CO2e = 10*interp1(Tv, CEA(1,8,:), T)+interp1(Tv, CEA(1,9,:), T);
             out.NO = interp1(Tv, CEA(1,10,:), T);
         elseif p*1e-5 > 50
             out.T = interp1(Tv, CEA(end,4,:), T);
             out.c = interp1(Tv, CEA(end,7,:), T);
-            out.Q_R = interp1(Tv, CEA(end,5,:), T)-h_reac;
+            out.h = interp1(Tv, CEA(end,5,:), T);
+            out.Q_R = out.h-h_reac;
             out.gamma = interp1(Tv, CEA(end,6,:), T);
             out.CO2e = 10*interp1(Tv, CEA(end,8,:), T)+interp1(Tv, CEA(end,9,:), T);
             out.NO = interp1(Tv, CEA(end,10,:), T);
@@ -293,7 +302,8 @@ function out = CEARUN(p, T, CEA, Tv)
             [X, Y] = meshgrid(Tv, pv);
             out.T = interp2(X, Y, Tad, T, p*1e-5);
             out.c = interp2(X, Y, c, T, p*1e-5);
-            out.Q_R = interp2(X, Y, h_BNR, T, p*1e-5)-h_reac;
+            out.h = interp2(X, Y, h_BNR, T, p*1e-5);
+            out.Q_R = out.h-h_reac;
             out.gamma = interp2(X, Y, gamma, T, p*1e-5);
             out.CO2e = 10*interp2(X, Y, CO, T, p*1e-5) + interp2(X, Y, CO2, T, p*1e-5);
             out.NO = interp2(X, Y, NO, T, p*1e-5);
@@ -305,7 +315,6 @@ function out = combustor(in, spr, LHV, eta, R)
     % Inlet Conditions: V = 250m/s, assuming small nozzle/diffuser to
     % adjust flow to this speed?
     
-
     i = 0; err = 1; tmp = in.T0; tmpp = in.p0;
     while err > 0.001 && i < 1e4
         % disp(['i=',num2str(i),', T=',num2str(tmp)])
@@ -376,11 +385,25 @@ function out = afterburner_inop(in, spr, R)
     out.dmdt_f = 0;
 end
 
-function out = afterburner_op(in, spr, LHV, eta)
+function out = afterburner_op(in, spr, LHV)
     CEA = load('CEA.mat');
     out = CEARUN(in.p, in.T, CEA.ABR, [200, 500, 700, 900, 2000]);
     out.p0 = in.p0*spr;
-    out.dmdt_f = out.Q_R/LHV/eta;
+    out.dmdt_f = -out.Q_R*in.dmdt/LHV;
+    out.dmdt = in.dmdt+out.dmdt_f;
+    i = 0; err = 1; tmp = out.p0;
+    while err > 0.001 && i < 1e4
+        i = i + 1;
+
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',tmp,'Air');
+        out.V = in.rho/out.rho*in.V;
+        out.M = out.V/out.c;
+        out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+        out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
+
+        err = abs((out.p-tmp)/out.p);
+        tmp = out.p;
+    end
 end
 
 function out = nozzle(in, spr, eta, R)
@@ -500,7 +523,9 @@ engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
 engine.hpt = turb(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT, 0.35, R);
 engine.lpt = turb(engine.hpt, (engine.lpc.w*dmdt_aH+engine.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R);
 engine.mixer = mix(engine.lpt, bypass, spr.MXR, R);
+
 engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R);
+engine.afterburnerop = afterburner_op(engine.mixer, spr.ABRON, LHV);
 engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R)
 
 % Output Parameters
