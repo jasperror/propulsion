@@ -91,9 +91,6 @@ function [cp,h,s,gamma] = air_props(T)
     gamma = cp/cv;
 end
 
-function s = entropy_air(T)
-    [~,~,s,~] = air_props(T);
-end
 
 function h = enthalpy_air(T)
     [~,h,~,~] = air_props(T);
@@ -169,18 +166,19 @@ function out = turb(in, w_req, eta, Ar, R)
         h2s = h02s-out.V^2/2;
         h2 = h02-out.V^2/2;
         out.p = py.CoolProp.CoolProp.PropsSI('P','H',h2s,'S',s1,'Air');
-        out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.p,'Air');
+        out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',tmpp,'Air');
 
-        err = sqrt(mean( ((out.p-tmp)/out.p)^2+((out.T-tmp)/out.T)^2 ));
+        err = sqrt(mean( ((out.p-tmpp)/out.p)^2+((out.T-tmp)/out.T)^2 ));
         tmp = out.T;
         tmpp = out.p;
     end
 
-    
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',out.T,'P',out.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',out.T,'P',out.p,'Air');
+    out.gamma = cp/cv;
     out.M = out.V/sqrt(out.gamma*R*out.T);
     out.p0 = out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
     out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
-    out.w = h2-h1+0.5*(out.V^2-in.V^2);
 end
 
 function out = duct(in, spr)
@@ -215,13 +213,15 @@ function out = CEARUN(p, T, CEA, Tv)
     CO2 = reshape(CEA(:,9,:),sz);
     NO = reshape(CEA(:,10,:),sz);
     OF = reshape(CEA(1,2,:),[1, size(CEA,3)]);
+    phi = reshape(CEA(1,1,:),[1, size(CEA,3)]);
     pv = CEA(:,3,1)';
-    h_air = py.CoolProp.CoolProp.PropsSI('H','T',T,'P',p,'Air');
-    h_fuel = -284117/151.9; % Jet-A enthalpy [kJ/kg]
+    h_air = py.CoolProp.CoolProp.PropsSI('H','T',T,'P',p,'Air')/1000; % Air sp enthalpy [kJ/kg]
+    h_fuel = -284117/151.9; % Jet-A sp enthalpy [kJ/kg]
 
     % Lookup Values
     if T < 200 % If outside of bounds then use min/max. There is probably a better way to do this
         out.OF = CEA(1,2,1);
+        out.phi = CEA(1,1,1);
         h_reac = (h_air*OF + h_fuel)/(1+OF);
         if p*1e-5 < 0.1
             out.T = CEA(1,4,1);
@@ -247,6 +247,7 @@ function out = CEARUN(p, T, CEA, Tv)
         end
     elseif T > 2000
         out.OF = CEA(1,2,end);
+        out.phi = CEA(1,1,end);
         h_reac = (h_air*OF + h_fuel)/(1+OF);
         if p*1e-5 < 0.1
             out.T = CEA(1,4,end);
@@ -272,6 +273,7 @@ function out = CEARUN(p, T, CEA, Tv)
         end
     else
         out.OF = interp1(Tv, OF, T);
+        out.phi = interp1(Tv, phi, T);
         h_reac = (h_air*OF + h_fuel)/(1+OF);
         if p*1e-5 < 0.1
             out.T = interp1(Tv, CEA(1,4,:), T);
@@ -288,18 +290,16 @@ function out = CEARUN(p, T, CEA, Tv)
             out.CO2e = 10*interp1(Tv, CEA(end,8,:), T)+interp1(Tv, CEA(end,9,:), T);
             out.NO = interp1(Tv, CEA(end,10,:), T);
         else % If parameters are OK then interpolate values from CEA
+            disp('interp2ing')
             [X, Y] = meshgrid(Tv, pv);
-            out.T = interp2(X, Y, Tad, p*1e-5, T);
-            out.c = interp2(X, Y, c, p*1e-5, T);
-            out.Q_R = interp2(X, Y, h_BNR, p*1e-5, T)-h_reac; % There shouldn't really need to be an absolute value here but it is hard to get enthalpy for fuel
-            out.gamma = interp2(X, Y, gamma, p*1e-5, T);
-            out.CO2e = 10*interp2(X, Y, CO, p*1e-5, T) + interp2(X, Y, CO2, p*1e-5, T);
-            out.NO = interp2(X, Y, NO, p*1e-5, T);
+            out.T = interp2(X, Y, Tad, T, p*1e-5);
+            out.c = interp2(X, Y, c, T, p*1e-5);
+            out.Q_R = interp2(X, Y, h_BNR, T, p*1e-5)-h_reac;
+            out.gamma = interp2(X, Y, gamma, T, p*1e-5);
+            out.CO2e = 10*interp2(X, Y, CO, T, p*1e-5) + interp2(X, Y, CO2, T, p*1e-5);
+            out.NO = interp2(X, Y, NO, T, p*1e-5);
         end
     end
-    out.Q_R = 1e3*out.Q_R;
-    cp = out.gamma*287/(out.gamma-1);
-    out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'CPMASS',cp,'Air');
 end
 
 function out = combustor(in, spr, LHV, eta, R)
@@ -325,13 +325,14 @@ function out = combustor(in, spr, LHV, eta, R)
     out = CEARUN(p, T, CEA.COMB, [200, 500, 700, 800, 900, 1000, 2000]);
     out.p = p;
     out.p0 = spr*in.p0;
+    out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',out.p,'Air');
 
     % Calculate resulting parameters
     out.V = 250;
     out.M = out.V/out.c;
     t0_star = in.T0*(1+out.gamma*out.M^2)^2/(2*(out.gamma+1)*out.M^2*(1+(out.gamma-1)/2*out.M^2));
     out.T0 = t0_star*(in.T0/t0_star + out.Q_R/(out.gamma*R/(out.gamma-1)*t0_star));
-    out.dmdt_f = out.Q_R/LHV/eta;
+    out.dmdt_f = -out.Q_R*in.dmdt/LHV/eta;
     out.dmdt = out.dmdt_f+in.dmdt;
 end
 
