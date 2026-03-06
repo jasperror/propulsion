@@ -13,10 +13,10 @@ clear; close all; clc;
 % Design-point Operating Conditions
 dmdt_a = 150; % Total air mass flow rate, kg/s
 pr = 28; % Overall pressure ratio, []
-LPC_pr = 1.25; % LPC pressure ratio, []
 T_5 = 2000; % TIT, K
 BPR = 0.57; % Bypass ratio, []
 FAN_pr = 1.75; % Fan pressure ratio, []
+LPC_pr = 1.25; % LPC pressure ratio, []
 HPC_pr = 12.8; % HPC pressure ratio, []
 LHV = 43150; % Fuel heating value, kJ/kg
 T_a = 288.15; % Design point ambient temperature, K
@@ -99,38 +99,38 @@ function h = enthalpy_air(T)
     [~,h,~,~] = air_props(T);
 end
 
-function out = diffuser(in, spr, Ar) % Assuming adiabatic
+function out = diffuser(in, spr, Ar, R) % Assuming adiabatic
     out = in;
     out.p0 = in.p0 * spr;
-    [~, ~, ~, gamma1] = air_props(in.T);
 
     i = 0; err = 1; tmp = in.T0;
     while err > 0.001 && i < 1e4
         % disp(['DIFFUSER i=',num2str(i),', T=',num2str(tmp)])
         i = i+1;
-        [~, ~, ~, gamma2] = air_props(tmp);
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',out.p,'Air');
+        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',out.p,'Air');
+        out.gamma = cp/cv;
         out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
-        out.M = Ar*in.rho/out.rho*in.M*sqrt(gamma1*in.T)/sqrt(gamma2*tmp); % From mass conservation
-        out.p = out.p0*(1+(gamma2-1)/2*out.M^2)^(gamma2/(1-gamma2));
-        out.T = in.T0/(1+(gamma2-1)/2*out.M^2);
+        out.V = in.rho/out.rho*Ar*in.V;
+        out.M = out.V/sqrt(out.gamma*R*tmp);
+        out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
+        out.T = in.T0/(1+(out.gamma-1)/2*out.M^2);
         err = abs((out.T-tmp)/out.T);
         tmp = out.T;
-    end
-    out.V = in.rho/out.rho*Ar*in.V;
-    [~, ~, ~, out.gamma] = air_props(out.T);
+    end 
 end
 
 function out = comp(in, pr, eta, Ar, R)
     out.p = in.p*pr;
     out.dmdt = in.dmdt;
-    
+    h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
+    h01 = h1 + in.V^2/2;
+    s1 = py.CoolProp.CoolProp.PropsSI('S','T',in.T,'P',in.p,'Air');
+
     tmp = in.T; i = 0; err = 1;
     while err > 0.001 && i < 1e4
         i = i + 1;
         
-        h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
-        h01 = h1 + in.V^2/2;
-        s1 = py.CoolProp.CoolProp.PropsSI('S','T',in.T,'P',in.p,'Air');
         out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
         out.V = in.rho/out.rho*Ar*in.V;
         h2s = py.CoolProp.CoolProp.PropsSI('H','P',out.p,'S',s1,'Air');
@@ -152,28 +152,28 @@ function out = comp(in, pr, eta, Ar, R)
     out.w = h2-h1+0.5*(out.V^2-in.V^2);
 end
 
-function out = turb(in, pr, eta, Ar, R)
-    out.p = in.p*pr;
+function out = turb(in, w_req, eta, Ar, R)
     out.dmdt = in.dmdt;
+    h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
+    h01 = h1 + in.V^2/2;
+    s1 = py.CoolProp.CoolProp.PropsSI('S','T',in.T,'P',in.p,'Air');
+    h02 = h01-w_req;
+    h02s = h01-(h01-h02)/eta;
     
-    tmp = in.T; i = 0; err = 1;
+    tmp = in.T; tmpp = in.p; i = 0; err = 1;
     while err > 0.001 && i < 1e4
-
         i = i + 1;
-        
-        h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
-        h01 = h1 + in.V^2/2;
-        s1 = py.CoolProp.CoolProp.PropsSI('S','T',in.T,'P',in.p,'Air');
-        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
+
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',tmpp,'Air');
         out.V = in.rho/out.rho*Ar*in.V;
-        h2s = py.CoolProp.CoolProp.PropsSI('H','P',out.p,'S',s1,'Air');
-        h02s = h2s + out.V^2/2;
-        h02 = h01-(h01-h02s)*eta;
-        h2 = h02 - out.V^2/2;
+        h2s = h02s-out.V^2/2;
+        h2 = h02-out.V^2/2;
+        out.p = py.CoolProp.CoolProp.PropsSI('P','H',h2s,'S',s1,'Air');
         out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.p,'Air');
 
-        err = abs((out.T-tmp)/out.T);
+        err = sqrt(mean( ((out.p-tmp)/out.p)^2+((out.T-tmp)/out.T)^2 ));
         tmp = out.T;
+        tmpp = out.p;
     end
 
     
@@ -216,7 +216,7 @@ function out = CEARUN(p, T, CEA, Tv)
     NO = reshape(CEA(:,10,:),sz);
     OF = reshape(CEA(1,2,:),[1, size(CEA,3)]);
     pv = CEA(:,3,1)';
-    [~, h_air] = air_props(T);
+    h_air = py.CoolProp.CoolProp.PropsSI('H','T',T,'P',p,'Air');
     h_fuel = -284117/151.9; % Jet-A enthalpy [kJ/kg]
 
     % Lookup Values
@@ -289,9 +289,6 @@ function out = CEARUN(p, T, CEA, Tv)
             out.NO = interp1(Tv, CEA(end,10,:), T);
         else % If parameters are OK then interpolate values from CEA
             [X, Y] = meshgrid(Tv, pv);
-            size(pv)
-            size(Tv)
-            size(X)
             out.T = interp2(X, Y, Tad, p*1e-5, T);
             out.c = interp2(X, Y, c, p*1e-5, T);
             out.Q_R = interp2(X, Y, h_BNR, p*1e-5, T)-h_reac; % There shouldn't really need to be an absolute value here but it is hard to get enthalpy for fuel
@@ -301,24 +298,31 @@ function out = CEARUN(p, T, CEA, Tv)
         end
     end
     out.Q_R = 1e3*out.Q_R;
+    cp = out.gamma*287/(out.gamma-1);
+    out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'CPMASS',cp,'Air');
 end
 
 function out = combustor(in, spr, LHV, eta, R)
-    i = 0; err = 1; tmp = in.T0;
+    % Inlet Conditions: V = 250m/s, assuming small nozzle/diffuser to
+    % adjust flow to this speed?
+    
+    i = 0; err = 1; tmp = in.T0; tmpp = in.p0;
     while err > 0.001 && i < 1e4
         disp(['i=',num2str(i),', T=',num2str(tmp)])
         i = i+1;
-        [~, ~, ~, gamma] = air_props(tmp);
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
+        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
+        gamma = cp/cv;
         M = 250/sqrt(gamma*R*tmp);
         T = in.T0/(1+(gamma-1)/2*M^2);
-        err = abs((T-tmp)/T);
+        p = in.p0*(1+(gamma-1)/2*M^2)^(-gamma/(gamma-1));
+        err = sqrt(mean( ((T-tmp)/T)^2+((p-tmpp)/p)^2 ));
         tmp = T;
+        tmpp = p;
     end
-    p = in.p0*(1+(gamma-1)/2*M^2)^(-gamma/(gamma-1));
-
+    
     CEA = load('CEA.mat');
-    out = CEARUN(p, T, CEA.COMB, [200, 500,
-        700, 800, 900, 1000, 2000]);
+    out = CEARUN(p, T, CEA.COMB, [200, 500, 700, 800, 900, 1000, 2000]);
     out.p = p;
     out.p0 = spr*in.p0;
 
@@ -473,8 +477,10 @@ ambient.p = 101.325e3;
 ambient.dmdt = 150;
 ambient.rho = py.CoolProp.CoolProp.PropsSI('D','T',ambient.T,'P',ambient.p,'Air');
 R = 287;
-[~, ~, ~, ambient.gamma] = air_props(ambient.T);
 ambient.M = 0.5;
+cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',ambient.T,'P',ambient.p,'Air');
+cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',ambient.T,'P',ambient.p,'Air');
+ambient.gamma = cp/cv;
 ambient.V = ambient.M*sqrt(ambient.gamma*R*ambient.T);
 dmdt_aH = ambient.dmdt/(BPR+1);
 dmdt_aC = BPR*ambient.dmdt/(BPR+1);
@@ -484,7 +490,7 @@ ambient.T0 = ambient.T*(1+(ambient.gamma-1)/2*ambient.M^2);
 
 
 
-engine.diffuser = diffuser(ambient, spr.INT, 0.95);
+engine.diffuser = diffuser(ambient, spr.INT, 0.95, R);
 engine.fan = comp(engine.diffuser, FAN_pr, eta.FAN, 1.02, R)
 % Should account for duct p0 losses here
 engine.lpc = comp(engine.fan, LPC_pr, eta.LPC, 1.5, R)
@@ -493,8 +499,9 @@ engine.hpc = comp(engine.lpc, HPC_pr, eta.HPC, 2.3, R)
 % and here
 engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R)
 % and here
-engine.hpt = turb(engine.combustor, HPT_pr, eta.HPT, 0.35, R)
-engine.lpt = turb(engine.hpt, LPT_pr, eta.LPT, 0.7, R)
+engine.hpt = turb(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT, 0.35, R)
+% not here
+engine.lpt = turb(engine.hpt, (engine.lpc.w*dmdt_aH+engine.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R)
 % % and here
 % engine.mixer = mixer()
 % % and here
