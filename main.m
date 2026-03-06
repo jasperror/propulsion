@@ -47,19 +47,8 @@ spr.MXR = 0.97; % Mixer SPR, []
 spr.BPD = 0.96; % Bypass duct SPR, []
 spr.HPC = 0.99; % HPC duct SPR, []
 spr.ABR = 0.98; % Afterburner duct SPR, []
+spr.ABRON = 0.95; % Afterburner operational SPR, []
 spr.NOZ = 0.98; % Nozzle SPR, []
-
-%% Inlet ambient conditions
-
-% gamma_guess = 1.4;
-% flow.p0 = p_a * (1 + ((gamma_guess - 1)/2) * M_1^2)^(gamma_guess/(gamma_guess - 1)); % Ambiant static pressure, Pa
-% flow.T0 = T_a * (1 + ((gamma_guess - 1)/2) * M_1^2); % Ambiant static temperature, K
-% flow.mdot = dmdt_a; % Mass flow rate, kg/s
-% flow.M = M_1;
-% flow.T = T_a;
-% flow.p = p_a;
-% flow.V = M_1*sqrt(gamma_guess*R*T_a);
-% [flow.cp, flow.h, flow.s] = air_props(flow.T0);
 
 %% Engine Components
 
@@ -97,23 +86,25 @@ function h = enthalpy_air(T)
 end
 
 function out = diffuser(in, spr, Ar, R) % Assuming adiabatic
-    out = in;
     out.p0 = in.p0 * spr;
+    out.dmdt = in.dmdt;
+    out.T0 = in.T0;
 
-    i = 0; err = 1; tmp = in.T0;
+    i = 0; err = 1; tmp = in.T; tmpp = in.p;
     while err > 0.001 && i < 1e4
         % disp(['DIFFUSER i=',num2str(i),', T=',num2str(tmp)])
         i = i+1;
-        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',out.p,'Air');
-        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',out.p,'Air');
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
+        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
         out.gamma = cp/cv;
-        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',tmpp,'Air');
         out.V = in.rho/out.rho*Ar*in.V;
         out.M = out.V/sqrt(out.gamma*R*tmp);
         out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
         out.T = in.T0/(1+(out.gamma-1)/2*out.M^2);
-        err = abs((out.T-tmp)/out.T);
+        err = sqrt(mean( ((out.T-tmp)/out.T)^2+((out.p-tmpp)/out.p)^2 ));
         tmp = out.T;
+        tmpp = out.p;
     end 
 end
 
@@ -203,7 +194,6 @@ function out = duct(in, spr, R)
 end
 
 function out = CEARUN(p, T, CEA, Tv)
-
     % Import CEA data
     sz = size(CEA, [1, 3]);
     Tad = reshape(CEA(:,4,:),sz);
@@ -227,21 +217,24 @@ function out = CEARUN(p, T, CEA, Tv)
         if p*1e-5 < 0.1
             out.T = CEA(1,4,1);
             out.c = CEA(1, 7, 1);
-            out.Q_R = CEA(1, 5, 1)-h_reac;
+            out.h = CEA(1, 5, 1);
+            out.Q_R = out.h-h_reac;
             out.gamma = CEA(1,6,1);
             out.CO2e = 10*CEA(1,8,1)+CEA(1,9,1);
             out.NO = CEA(1,10,1);
         elseif p*1e-5 > 50
             out.T = CEA(end,4,1);
             out.c = CEA(end, 7, 1);
-            out.Q_R = CEA(end, 5, 1)-h_reac;
+            out.h = CEA(end, 5, 1);
+            out.Q_R = out.h-h_reac;
             out.gamma = CEA(end,6,1);
             out.CO2e = 10*CEA(end,8,1)+CEA(end,9,1);
             out.NO = CEA(end,10,1);
         else
             out.T = interp1(pv, CEA(:,4,1), p*1e-5);
             out.c = interp1(pv, CEA(:,7,1), p*1e-5);
-            out.Q_R = interp1(pv, CEA(:,5,1), p*1e-5)-h_reac;
+            out.h = interp1(pv, CEA(:,5,1), p*1e-5);
+            out.Q_R = out.h-h_reac;
             out.gamma = interp1(pv, CEA(:,6,1), p*1e-5);
             out.CO2e = 10*interp1(pv, CEA(:,8,1), p*1e-5)+interp1(pv, CEA(:,9,1), p*1e-5);
             out.NO = interp1(pv, CEA(:,10,1), p*1e-5);
@@ -253,21 +246,24 @@ function out = CEARUN(p, T, CEA, Tv)
         if p*1e-5 < 0.1
             out.T = CEA(1,4,end);
             out.c = CEA(1, 7, end);
-            out.Q_R = CEA(1, 5, end)-h_reac;
+            out.h = CEA(1, 5, end);
+            out.Q_R = out.h-h_reac;
             out.gamma = CEA(1,6,end);
             out.CO2e = 10*CEA(1,8,end)+CEA(1,9,end);
             out.NO = CEA(1,10,end);
         elseif p*1e-5 > 50
             out.T = CEA(end,4,end);
             out.c = CEA(end, 7, end);
-            out.Q_R = CEA(end, 5, end)-h_reac;
+            out.h = CEA(end, 5, end);
+            out.Q_R = out.h-h_reac;
             out.gamma = CEA(end,6,end);
             out.CO2e = 10*CEA(end,8,end)+CEA(end,9,end);
             out.NO = CEA(end,10,end);
         else
             out.T = interp1(pv, CEA(:, 4, end), p*1e-5);
             out.c = interp1(pv, CEA(:, 7, end), p*1e-5);
-            out.Q_R = interp1(pv, CEA(:, 5, end), p*1e-5)-h_reac;
+            out.h = interp1(pv, CEA(:, 5, end), p*1e-5);
+            out.Q_R = out.h-h_reac;
             out.gamma = interp1(pv, CEA(:,6,end), p*1e-5);
             out.CO2e = 10*interp1(pv, CEA(:,8,end), p*1e-5)+interp1(pv, CEA(:,9,end), p*1e-5);
             out.NO = interp1(pv, CEA(:,10,end), p*1e-5);
@@ -279,23 +275,25 @@ function out = CEARUN(p, T, CEA, Tv)
         if p*1e-5 < 0.1
             out.T = interp1(Tv, CEA(1,4,:), T);
             out.c = interp1(Tv, CEA(1,7,:), T);
-            out.Q_R = interp1(Tv, CEA(1,5,:), T)-h_reac;
+            out.h = interp1(Tv, CEA(1,5,:), T);
+            out.Q_R = out.h-h_reac;
             out.gamma = interp1(Tv, CEA(1,6,:), T);
             out.CO2e = 10*interp1(Tv, CEA(1,8,:), T)+interp1(Tv, CEA(1,9,:), T);
             out.NO = interp1(Tv, CEA(1,10,:), T);
         elseif p*1e-5 > 50
             out.T = interp1(Tv, CEA(end,4,:), T);
             out.c = interp1(Tv, CEA(end,7,:), T);
-            out.Q_R = interp1(Tv, CEA(end,5,:), T)-h_reac;
+            out.h = interp1(Tv, CEA(end,5,:), T);
+            out.Q_R = out.h-h_reac;
             out.gamma = interp1(Tv, CEA(end,6,:), T);
             out.CO2e = 10*interp1(Tv, CEA(end,8,:), T)+interp1(Tv, CEA(end,9,:), T);
             out.NO = interp1(Tv, CEA(end,10,:), T);
         else % If parameters are OK then interpolate values from CEA
-            disp('interp2ing')
             [X, Y] = meshgrid(Tv, pv);
             out.T = interp2(X, Y, Tad, T, p*1e-5);
             out.c = interp2(X, Y, c, T, p*1e-5);
-            out.Q_R = interp2(X, Y, h_BNR, T, p*1e-5)-h_reac;
+            out.h = interp2(X, Y, h_BNR, T, p*1e-5);
+            out.Q_R = out.h-h_reac;
             out.gamma = interp2(X, Y, gamma, T, p*1e-5);
             out.CO2e = 10*interp2(X, Y, CO, T, p*1e-5) + interp2(X, Y, CO2, T, p*1e-5);
             out.NO = interp2(X, Y, NO, T, p*1e-5);
@@ -304,17 +302,14 @@ function out = CEARUN(p, T, CEA, Tv)
 end
 
 function out = combustor(in, spr, LHV, eta, R)
-    % Inlet Conditions: V = 250m/s, assuming small nozzle/diffuser to
-    % adjust flow to this speed?
-    
     i = 0; err = 1; tmp = in.T0; tmpp = in.p0;
     while err > 0.001 && i < 1e4
-        disp(['i=',num2str(i),', T=',num2str(tmp)])
+        % disp(['i=',num2str(i),', T=',num2str(tmp)])
         i = i+1;
         cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
         cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
         gamma = cp/cv;
-        M = 250/sqrt(gamma*R*tmp);
+        M = in.V/sqrt(gamma*R*tmp);
         T = in.T0/(1+(gamma-1)/2*M^2);
         p = in.p0*(1+(gamma-1)/2*M^2)^(-gamma/(gamma-1));
         err = sqrt(mean( ((T-tmp)/T)^2+((p-tmpp)/p)^2 ));
@@ -329,7 +324,7 @@ function out = combustor(in, spr, LHV, eta, R)
     out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',out.p,'Air');
 
     % Calculate resulting parameters
-    out.V = 250;
+    out.V = in.V;
     out.M = out.V/out.c;
     t0_star = in.T0*(1+out.gamma*out.M^2)^2/(2*(out.gamma+1)*out.M^2*(1+(out.gamma-1)/2*out.M^2));
     out.T0 = t0_star*(in.T0/t0_star + out.Q_R/(out.gamma*R/(out.gamma-1)*t0_star));
@@ -337,25 +332,39 @@ function out = combustor(in, spr, LHV, eta, R)
     out.dmdt = out.dmdt_f+in.dmdt;
 end
 
-function out = mixer(core, bypass, spr)
-% Assuming 100% mixing takes place
-  out = core;
-  mdot_core = core.dmdt;
-  mdot_bypass = bypass.dmdt;
-  mdot_a = mdot_bypass + mdot_core;
+function out = mix(core, bypass, spr, R)
+    hb = py.CoolProp.CoolProp.PropsSI('H','T',bypass.T,'P',bypass.p,'Air');
+    hc = py.CoolProp.CoolProp.PropsSI('H','T',core.T,'P',core.p,'Air');
+    h0b = hb+bypass.V^2/2;
+    h0c = hc+core.V^2/2;
+    h02 = (bypass.dmdt*h0b+core.dmdt*h0c)/(bypass.dmdt+core.dmdt);
 
-  [~,hc,~,~] = air_props(core.T);
-  [~,hb,~,~] = air_props(bypass.T);
+    d = 0.78;
+    r = d/2;
+    AH = pi*(0.85*r)^2; % Assuming core outlet is 85% of radius of engine
+    A2 = pi*r^2;
+    AC = A2-AH;
+    out.dmdt = core.dmdt+bypass.dmdt;
+    
+    tmp=(core.T+bypass.T)/2; i=0; err=1;
+    while err > 0.001 && i < 1e4
+        i = i + 1;
+        out.V = (bypass.rho*AC*bypass.V+core.rho*AH*core.V)/(tmp*A2);
+        h2 = h02-out.V^2/2;
+        out.p = (out.dmdt*out.V-bypass.dmdt*bypass.V-core.dmdt*core.V+bypass.p*AC+core.p*AH)/A2;
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','P',out.p,'H',h2,'Air');
+        err = abs((out.rho-tmp)/out.rho);
+        tmp = out.rho;
+    end
 
-  hm = (mdot_core * hc + mdot_bypass * hb) / mdot_a;
-
-  fun = @(T) enthalpy_air(T) - hm;
-  T_mix = fzero(fun, (core.T + bypass.T)/2);
-
-  p_mix = min(core.p, bypass.p);
-  out.p = p_mix * spr;
-  out.T = T_mix;
-  out.dmdt = mdot_a;
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','H',h2,'P',out.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','H',h2,'P',out.p,'Air');
+    out.gamma = cp/cv;
+    out.rho = py.CoolProp.CoolProp.PropsSI('D','H',h2,'P',out.p,'Air');
+    out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.p,'Air');
+    out.M = out.V/sqrt(out.gamma*R*out.T);
+    out.p0 = spr*out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
+    out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
 end
 
 function out = afterburner_inop(in, spr, R)
@@ -363,11 +372,25 @@ function out = afterburner_inop(in, spr, R)
     out.dmdt_f = 0;
 end
 
-function out = afterburner_op(in, spr, LHV, eta)
+function out = afterburner_op(in, spr, LHV)
     CEA = load('CEA.mat');
     out = CEARUN(in.p, in.T, CEA.ABR, [200, 500, 700, 900, 2000]);
     out.p0 = in.p0*spr;
-    out.dmdt_f = out.Q_R/LHV/eta;
+    out.dmdt_f = -out.Q_R*in.dmdt/LHV;
+    out.dmdt = in.dmdt+out.dmdt_f;
+    i = 0; err = 1; tmp = out.p0;
+    while err > 0.001 && i < 1e4
+        i = i + 1;
+
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',tmp,'Air');
+        out.V = in.rho/out.rho*in.V;
+        out.M = out.V/out.c;
+        out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+        out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
+
+        err = abs((out.p-tmp)/out.p);
+        tmp = out.p;
+    end
 end
 
 function out = nozzle(in, eta, A, R, p_amb)
@@ -484,28 +507,7 @@ assumptions are identical to those listed for dry operations.
 Fuel type: Jet-A/JP-8
 %}
 
-%{
-Jackson's organization (for reference for now)
-a = flow;
-
-st1 = diffuser(a, spr.int);
-st2 = fan(st1, FAN_pr, eta.fan);
-st2 = duct(st2,spr.LPC);
-st3 = compressor(st2, LPC_pr, eta.Lpc);
-st3 = duct(st3, spr.LPC);
-st4 = compressor(st3, HPC_pr, eta.HPC);
-st4 = duct(st4, spr.HPC);
-st5 = combuster(st4, spr.BRN, Vbar_45);
-st5 = duct(st5,spr.BRN);
-
-W_HPC = st4.h - st3.h;
-W_LPC = st3.h - st2.h;
-W_FAN = st2.h - st1.h;
-W_shaft1 = (W_LPC + W_FAN) / eta.SFT;
-
-st6 = turbine(st5, W_HPC, eta.HPT);
-%}
-
+% Ambient Conditions
 ambient.T = 15+273.15;
 ambient.p = 101.325e3;
 ambient.dmdt = 150;
@@ -522,73 +524,38 @@ u = ambient.M*sqrt(ambient.gamma*R*ambient.T);
 ambient.p0 = ambient.p*(1+(ambient.gamma-1)/2*ambient.M^2)^(ambient.gamma/(ambient.gamma-1));
 ambient.T0 = ambient.T*(1+(ambient.gamma-1)/2*ambient.M^2);
 
-
-
+% Engine Calculations
 engine.diffuser = diffuser(ambient, spr.INT, 0.95, R);
-engine.fan = comp(engine.diffuser, FAN_pr, eta.FAN, 1.02, R)
-% Should account for duct p0 losses here
+engine.fan = comp(engine.diffuser, FAN_pr, eta.FAN, 1.02, R);
+
 core = engine.fan;
 core.dmdt = dmdt_aH;
+core = duct(core, spr.LPC, R);
 bypass = engine.fan;
 bypass.dmdt = dmdt_aC;
-engine.lpc = comp(core, LPC_pr, eta.LPC, 1.5, R)
-% and here
-engine.hpc = comp(engine.lpc, HPC_pr, eta.HPC, 2.3, R)
-% and here
-engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R)
-% and here
-engine.hpt = turb(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT, 0.35, R)
-% not here
-engine.lpt = turb(engine.hpt, (engine.lpc.w*dmdt_aH+engine.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R)
-% and here
-engine.mixer = mixer(engine.hpt, bypass, spr.MXR)
-% and here
-engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R)
-% and here
-engine.nozzle = nozzle(engine.afterburner, eta.NOZ, pi*(0.78/2)^2, R, ambient.p)
+bypass = duct(bypass, spr.BPD, R);
 
-%{
-engine.diffuser = diffuser(ambient, spr.INT, Ar);
-engine.fan = fan(engine.diffuser, FAN_pr, eta.FAN);
-
-core = engine.fan;
-bypass = engine.fan;
-core.dmdt = ambient.dmdt / (1 + BPR);
-bypass.dmdt = ambient.dmdt - core.dmdt;
-bypass = duct(bypass, spr.BPD); 
-core = duct(core, spr.LPC);
-
-engine.lpc = compressor(core, spr.LPC, eta.LPC);
-engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC);
-
-engine.hpc.T0 = 800;
-
+engine.lpc = comp(core, LPC_pr, eta.LPC, 3, R);
+engine.lpc_ducted = duct(engine.lpc, spr.HPC, R);
+engine.hpc = comp(engine.lpc_ducted, HPC_pr, eta.HPC, 3, R); % Adjusted to get 150m/s in combustor in static conditions
 engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
-engine.hpt = turbine(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT);
-engine.lpt = turbine(engine.hpt, (core.dmdt*engine.lpc.w+ambient.dmdt*engine.fan.w)/core.dmdt/eta.SFT, eta.LPT);
-engine.mixer = mixer(engine.lpt, bypass, spr.MXR);
-engine.afterburner = afterburner_inop(engine.mixer, spr.ABR);
-engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R);
+engine.hpt = turb(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT, 0.35, R);
+engine.lpt = turb(engine.hpt, (engine.lpc.w*dmdt_aH+engine.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R);
+engine.mixer = mix(engine.lpt, bypass, spr.MXR, R);
 
-% parameters needed
-p_4 = engine.hpc.p;
-T_4 = engine.hpc.T;
-dmdt_f = engine.combustor.dmdt_f+engine.afterburner.dmdt_f;
-Q_R = engine.combustor.Q_R;
-u_e = engine.nozzle.u;
-p_e = engine.nozzle.p;
-% derived parameters
-f = dmdt_f/ambient.dmdt;
-
-% Output Parameters
-thrust = (ambient.dmdt+dmdt_f)*u_e-ambient.dmdt*u+pi*d_10^2/4*(p_e-p_a); % Thrust, N
-ST = thrust/ambient.dmdt; % Specific thrust, Ns/kg
-TSFC = dmdt_f/thrust; % Thrust-specific fuel consumption, kg/Ns
-
-eta_th = (1+f)*(u_e^2-u^2)/(2*f*Q_R); % Thermal efficiency, []
-eta_p = thrust*u/ambient.dmdt/((1+f)*(u_e^2/2)-u^2/2); % Propulsion efficiency, []
-eta_0 = eta_th*eta_p; % Overall efficiency, []
-
-LD = 10; % Estimate of cruise lift to drag ratio, []
-s = eta_0*LD*Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), m
-%}
+engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R);
+engine.afterburnerop = afterburner_op(engine.mixer, spr.ABRON, LHV);
+% engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R)
+% 
+% % Output Parameters
+% thrust = (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner.dmdt_f)*u_e-ambient.dmdt*ambient.u+pi*d_10^2/4*(engine.nozzle.p-ambient.p); % Thrust, N
+% ST = thrust/ambient.dmdt; % Specific thrust, Ns/kg
+% TSFC = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/thrust; % Thrust-specific fuel consumption, kg/Ns
+% 
+% f = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/ambient.dmdt;
+% eta_th = (1+f)*(engine.nozzle.u^2-ambient.u^2)/(-2*f*engine.combustor.Q_R); % Thermal efficiency, []
+% eta_p = thrust*ambient.u/ambient.dmdt/((1+f)*(engine.nozzle.u^2/2)-ambient.u^2/2); % Propulsion efficiency, []
+% eta_0 = eta_th*eta_p; % Overall efficiency, []
+% 
+% LD = 10; % Estimate of cruise lift to drag ratio, []
+% s = eta_0*LD*Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), m
