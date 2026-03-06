@@ -64,7 +64,7 @@ spr.NOZ = 0.98; % Nozzle SPR, []
 %% Engine Components
 
 function [cp,h,s,gamma] = air_props(T)
-    R = 0.287;  % KJ/kg-K
+    R = 287;  % J/kg-K
     
     if T <= 1000
         a1 = 3.78245636;
@@ -123,7 +123,7 @@ function out = comp(in, pr, eta, Ar, R)
     h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
     h01 = h1 + in.V^2/2;
     s1 = py.CoolProp.CoolProp.PropsSI('S','T',in.T,'P',in.p,'Air');
-
+    
     tmp = in.T; i = 0; err = 1;
     while err > 0.001 && i < 1e4
         i = i + 1;
