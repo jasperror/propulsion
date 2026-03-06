@@ -545,17 +545,18 @@ engine.mixer = mix(engine.lpt, bypass, spr.MXR, R);
 
 engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R);
 engine.afterburnerop = afterburner_op(engine.mixer, spr.ABRON, LHV);
-% engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R)
-% 
-% % Output Parameters
-% thrust = (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner.dmdt_f)*u_e-ambient.dmdt*ambient.u+pi*d_10^2/4*(engine.nozzle.p-ambient.p); % Thrust, N
-% ST = thrust/ambient.dmdt; % Specific thrust, Ns/kg
-% TSFC = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/thrust; % Thrust-specific fuel consumption, kg/Ns
-% 
-% f = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/ambient.dmdt;
-% eta_th = (1+f)*(engine.nozzle.u^2-ambient.u^2)/(-2*f*engine.combustor.Q_R); % Thermal efficiency, []
-% eta_p = thrust*ambient.u/ambient.dmdt/((1+f)*(engine.nozzle.u^2/2)-ambient.u^2/2); % Propulsion efficiency, []
-% eta_0 = eta_th*eta_p; % Overall efficiency, []
-% 
-% LD = 10; % Estimate of cruise lift to drag ratio, []
-% s = eta_0*LD*Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), m
+engine.nozzle = nozzle(engine.afterburner, eta.NOZ, pi*(0.78/2)^2, R, ambient.p);
+
+% Output Parameters
+thrust = (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner.dmdt_f)*engine.nozzle.V-ambient.dmdt*ambient.V+pi*d_10^2/4*(engine.nozzle.p-ambient.p); % Thrust, N
+ST = thrust/ambient.dmdt; % Specific thrust, Ns/kg
+TSFC = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/thrust; % Thrust-specific fuel consumption, kg/Ns
+
+f = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/ambient.dmdt;
+eta_th = (1+f)*(engine.nozzle.V^2-ambient.V^2)/(-2*f*engine.combustor.Q_R); % Thermal efficiency, []
+eta_p = thrust*ambient.V/ambient.dmdt/((1+f)*(engine.nozzle.V^2/2)-ambient.V^2/2); % Propulsion efficiency, []
+eta_0 = eta_th*eta_p; % Overall efficiency, []
+
+g=9.81;
+LD = 10; % Estimate of cruise lift to drag ratio, []
+s = eta_0*LD*engine.combustor.Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), m
