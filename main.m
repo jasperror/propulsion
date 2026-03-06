@@ -106,7 +106,7 @@ function out = diffuser(in, spr, Ar) % Assuming adiabatic
 
     i = 0; err = 1; tmp = in.T0;
     while err > 0.001 && i < 1e4
-        disp(['DIFFUSER i=',num2str(i),', T=',num2str(tmp)])
+        % disp(['DIFFUSER i=',num2str(i),', T=',num2str(tmp)])
         i = i+1;
         [~, ~, ~, gamma2] = air_props(tmp);
         out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
@@ -120,146 +120,87 @@ function out = diffuser(in, spr, Ar) % Assuming adiabatic
     [~, ~, ~, out.gamma] = air_props(out.T);
 end
 
-function out = fan(in, pr, eta)
-    R = 0.287;   
-    
-    out.p0 = in.p0 * pr;
-    out.p = in.p * pr;
-    
-    [~,h1,s1,~] = air_props(in.T);
-    
-    fun = @(T2s) entropy_air(T2s) - s1 - R*log(pr); 
-    T2s = fzero(fun, in.T * pr^0.3);
-    
-    [~,h2s,~,~] = air_props(T2s);
-    
-    h2 = h1 + (h2s - h1) / eta;
-    
-    fun2 = @(T2) enthalpy_air(T2) - h2; 
-    T2 = fzero(fun2, T2s);
-    
-    [~,~,~,gamma2] = air_props(T2);
-    h01 = h1 + in.V^2 / 2;
-    h02 = h01 + (h2s - h1) / eta;
-    out.V = sqrt(2 * (h02 - h2));
-    out.M = out.V / sqrt(gamma2*R*T2);
-
-    T02 = T2 * ( 1 + (gamma2 - 1) / 2 * out.M^2 );
-
-    out.T = T2;
-    out.T0 = T02;
-    out.w = h02-h01;
-    
-    [out.cp,out.h,out.s] = air_props(T2);
-end
-
-function out = fan2(in, pr, spr, eta)
+function out = comp(in, pr, eta, Ar, R)
     out.p = in.p*pr;
-    out.p0 = in.p0*spr;
     out.dmdt = in.dmdt;
     
-    out.T = in.T; i = 0;
+    tmp = in.T; i = 0; err = 1;
     while err > 0.001 && i < 1e4
         i = i + 1;
-        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',(in.T+out.T)/2,'P',in.p); % assuming average temp
-        T2s = exp(R/cp*log(pr))*in.T;
-        h2s = py.CoolProp.CoolProp.PropsSI('H','T',T2s,'P',out.p);
-        h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p);
-        h2 = (h2s-h1)/eta+h1;
-        out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.P);
-        out.gamma = cp/py.CoolProp.CoolProp.PropsSI('CVMASS','T',out.T,'P',out.p);
-        out.M = sqrt(( (out.p0/out.p)^((out.gamma-1)/out.gamma)-1 )*2/(out.gamma-1));
-        out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+        
+        h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
+        h01 = h1 + in.V^2/2;
+        s1 = py.CoolProp.CoolProp.PropsSI('S','T',in.T,'P',in.p,'Air');
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
+        out.V = in.rho/out.rho*Ar*in.V;
+        h2s = py.CoolProp.CoolProp.PropsSI('H','P',out.p,'S',s1,'Air');
+        h02s = h2s + out.V^2/2;
+        h02 = (h02s-h01)/eta+h01;
+        h2 = h02 - out.V^2/2;
+        out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.p,'Air');
+
+        err = abs((out.T-tmp)/out.T);
+        tmp = out.T;
     end
-    out.V = out.M*sqrt(out.gamma*R*out.T);
-    out.w = h2-h1+0.5*(out.u^2-in.u^2);
+    
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',out.T,'P',out.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',out.T,'P',out.p,'Air');
+    out.gamma = cp/cv;
+    out.M = out.V/sqrt(out.gamma*R*out.T);
+    out.p0 = out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
+    out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+    out.w = h2-h1+0.5*(out.V^2-in.V^2);
 end
 
-function out = compressor(in, pr, eta)
+function out = turb(in, pr, eta, Ar, R)
+    out.p = in.p*pr;
+    out.dmdt = in.dmdt;
+    
+    tmp = in.T; i = 0; err = 1;
+    while err > 0.001 && i < 1e4
 
-  R = 0.287;
-  out = in;
-  P01 = in.p0;
-  P02 = P01 * pr;
-  T1 = in.T;
-  P1 = in.p;
-  P2 = P1*pr;
-
-  [~,h1,s1,~] = air_props(T1);
-
-  fun = @(T2s) entropy_air(T2s) - s1 - R*log(P2/P1);
-  T2s = fzero(fun, in.T * (pr^0.3));
-
-  [~,h2s,~,~] = air_props(T2s);
-
-  h2 = h1 + (h2s - h1)/eta;
-
-  fun2 = @(T2) enthalpy_air(T2) - h2;
-  T2 = fzero(fun2, T2s);
-
-  [~,~,~,gamma2] = air_props(T2);
-
-  h01 = h1 + in.V^2 / 2;
-  h02 = h01 + (h2s - h1) / eta;
-  out.V = sqrt(2 * (h02 - h2));
-  out.M = out.V / sqrt(gamma2*R*T2);
-
-  T02 = T2 * ( 1 + (gamma2 - 1) / 2 * out.M^2 );
-
-  out.T = T2;
-  out.p = P2;
-  out.T0 = T02;
-  out.p0 = P02;   
-  out.dmdt = in.dmdt;
-  out.p0 = P02;
-  out.w = h02-h01;
-
-end
-
-function out = turbine(in, w_req, eta)
-  R = 0.287;
-
-  out = in;
-
-  [~,h1,s1,~] = air_props(in.T);
-
-  h01 = h1 + in.V^2 / 2;
-  h02 = h01 - eta * w_req;
-
-  V_guess = in.V;
-    for i = 1:10
-        h2 = h02 - V_guess^2 / 2;
-        fun = @(T2) enthalpy_air(T2) - h2;
-        out.T = fzero(fun,in.T - 200);
+        i = i + 1;
         
-        [~,~,s2,~] = air_props(out.T);
-        out.p = in.p * exp((s2 - s1) / R);
-        
-        [~,~,~,gamma] = air_props(out.T);
-        out.p0 = in.p0 * exp((s2 - s1) / R);
-        out.T0 = out.T + V_guess^2 / (2 * (gamma / (gamma - 1)) * R);
-        V_new = sqrt(2 * (h02 - h2));
-        
-        if abs(V_new - V_guess) < 1e-6
-            break
-        end
-        V_guess = V_new;
+        h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
+        h01 = h1 + in.V^2/2;
+        s1 = py.CoolProp.CoolProp.PropsSI('S','T',in.T,'P',in.p,'Air');
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
+        out.V = in.rho/out.rho*Ar*in.V;
+        h2s = py.CoolProp.CoolProp.PropsSI('H','P',out.p,'S',s1,'Air');
+        h02s = h2s + out.V^2/2;
+        h02 = h01-(h01-h02s)*eta;
+        h2 = h02 - out.V^2/2;
+        out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.p,'Air');
+
+        err = abs((out.T-tmp)/out.T);
+        tmp = out.T;
     end
-    out.V = V_guess;
-    out.M = out.V / sqrt(gamma * R * in.T);
-    out.T0 = out.T + out.V^2 / (2 * (gamma / (gamma - 1)) * R);
-    out.p0 = in.p0 * exp((s2 - s1) / R); 
-    out.p  = out.p0 / (1 + (gamma - 1)/2 * out.M^2)^(gamma / (gamma - 1));
-    [out.cp, out.h, out.s, out.gamma] = air_props(out.T);
+
+    
+    out.M = out.V/sqrt(out.gamma*R*out.T);
+    out.p0 = out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
+    out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+    out.w = h2-h1+0.5*(out.V^2-in.V^2);
 end
 
 function out = duct(in, spr)
-    out = in;
-
     out.dmdt = in.dmdt;
-
     out.p0 = in.p0 * spr;
     out.T0 = in.T0;
+    tmp = in.T; i = 0; err = 1;
+    while err > 0.001 && i < 1e4
+        i = i + 1;
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',out.p,'Air');
+        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',out.p,'Air');
+        out.gamma = cp/cv;
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
+        out.V = in.rho/out.rho*in.V; % Assuming no change in cross-section area
+        out.M = in.V/sqrt(out.gamma*R*tmp);
+        out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
+        out.T = out.T0/(1+(gamma-1)/2*out.M^2);
+        err = abs((out.T-tmp)/out.T);
+        tmp = out.T;
+    end
 end
 
 function out = CEARUN(p, T, CEA, Tv)
@@ -540,8 +481,28 @@ dmdt_aC = BPR*ambient.dmdt/(BPR+1);
 u = ambient.M*sqrt(ambient.gamma*R*ambient.T);
 ambient.p0 = ambient.p*(1+(ambient.gamma-1)/2*ambient.M^2)^(ambient.gamma/(ambient.gamma-1));
 ambient.T0 = ambient.T*(1+(ambient.gamma-1)/2*ambient.M^2);
-Ar = .95; % Assumed diffuser area ratio, Ain/Aout
 
+
+
+engine.diffuser = diffuser(ambient, spr.INT, 0.95);
+engine.fan = comp(engine.diffuser, FAN_pr, eta.FAN, 1.02, R)
+% Should account for duct p0 losses here
+engine.lpc = comp(engine.fan, LPC_pr, eta.LPC, 1.5, R)
+% and here
+engine.hpc = comp(engine.lpc, HPC_pr, eta.HPC, 2.3, R)
+% and here
+engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R)
+% and here
+engine.hpt = turb(engine.combustor, HPT_pr, eta.HPT, 0.35, R)
+engine.lpt = turb(engine.hpt, LPT_pr, eta.LPT, 0.7, R)
+% % and here
+% engine.mixer = mixer()
+% % and here
+% engine.afterburner = afterburner_inop()
+% % and here
+% engine.nozzle = nozzle()
+
+%{
 engine.diffuser = diffuser(ambient, spr.INT, Ar);
 engine.fan = fan(engine.diffuser, FAN_pr, eta.FAN);
 
@@ -585,3 +546,4 @@ eta_0 = eta_th*eta_p; % Overall efficiency, []
 
 LD = 10; % Estimate of cruise lift to drag ratio, []
 s = eta_0*LD*Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), m
+%}
