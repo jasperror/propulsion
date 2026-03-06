@@ -203,7 +203,6 @@ function out = duct(in, spr, R)
 end
 
 function out = CEARUN(p, T, CEA, Tv)
-
     % Import CEA data
     sz = size(CEA, [1, 3]);
     Tad = reshape(CEA(:,4,:),sz);
@@ -291,7 +290,6 @@ function out = CEARUN(p, T, CEA, Tv)
             out.CO2e = 10*interp1(Tv, CEA(end,8,:), T)+interp1(Tv, CEA(end,9,:), T);
             out.NO = interp1(Tv, CEA(end,10,:), T);
         else % If parameters are OK then interpolate values from CEA
-            disp('interp2ing')
             [X, Y] = meshgrid(Tv, pv);
             out.T = interp2(X, Y, Tad, T, p*1e-5);
             out.c = interp2(X, Y, c, T, p*1e-5);
@@ -307,14 +305,15 @@ function out = combustor(in, spr, LHV, eta, R)
     % Inlet Conditions: V = 250m/s, assuming small nozzle/diffuser to
     % adjust flow to this speed?
     
+
     i = 0; err = 1; tmp = in.T0; tmpp = in.p0;
     while err > 0.001 && i < 1e4
-        disp(['i=',num2str(i),', T=',num2str(tmp)])
+        % disp(['i=',num2str(i),', T=',num2str(tmp)])
         i = i+1;
         cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
         cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
         gamma = cp/cv;
-        M = 250/sqrt(gamma*R*tmp);
+        M = 150/sqrt(gamma*R*tmp);
         T = in.T0/(1+(gamma-1)/2*M^2);
         p = in.p0*(1+(gamma-1)/2*M^2)^(-gamma/(gamma-1));
         err = sqrt(mean( ((T-tmp)/T)^2+((p-tmpp)/p)^2 ));
@@ -329,7 +328,7 @@ function out = combustor(in, spr, LHV, eta, R)
     out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',out.p,'Air');
 
     % Calculate resulting parameters
-    out.V = 250;
+    out.V = 150;
     out.M = out.V/out.c;
     t0_star = in.T0*(1+out.gamma*out.M^2)^2/(2*(out.gamma+1)*out.M^2*(1+(out.gamma-1)/2*out.M^2));
     out.T0 = t0_star*(in.T0/t0_star + out.Q_R/(out.gamma*R/(out.gamma-1)*t0_star));
@@ -356,6 +355,41 @@ function out = mixer(core, bypass, spr)
   out.p = p_mix * spr;
   out.T = T_mix;
   out.dmdt = mdot_a;
+end
+
+function out = mix(core, bypass, spr, R)
+    hb = py.CoolProp.CoolProp.PropsSI('H','T',bypass.T,'P',bypass.p,'Air');
+    hc = py.CoolProp.CoolProp.PropsSI('H','T',core.T,'P',core.p,'Air');
+    h0b = hb+bypass.V^2/2;
+    h0c = hc+core.V^2/2;
+    h02 = (bypass.dmdt*h0b+core.dmdt*h0c)/(bypass.dmdt+core.dmdt);
+
+    d = 0.78;
+    r = d/2;
+    AH = pi*(0.85*r)^2; % Assuming core outlet is 85% of radius of engine
+    A2 = pi*r^2;
+    AC = A2-AH;
+    out.dmdt = core.dmdt+bypass.dmdt;
+    
+    tmp=(core.T+bypass.T)/2; i=0; err=1;
+    while err > 0.001 && i < 1e4
+        i = i + 1;
+        out.V = (bypass.rho*AC*bypass.V+core.rho*AH*core.V)/(tmp*A2);
+        h2 = h02-out.V^2/2;
+        out.p = (out.dmdt*out.V-bypass.dmdt*bypass.V-core.dmdt*core.V+bypass.p*AC+core.p*AH)/A2;
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','P',out.p,'H',h2,'Air');
+        err = abs((out.rho-tmp)/out.rho);
+        tmp = out.rho;
+    end
+
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','H',h2,'P',out.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','H',h2,'P',out.p,'Air');
+    out.gamma = cp/cv;
+    out.rho = py.CoolProp.CoolProp.PropsSI('D','H',h2,'P',out.p,'Air');
+    out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.p,'Air');
+    out.M = out.V/sqrt(out.gamma*R*out.T);
+    out.p0 = spr*out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
+    out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
 end
 
 function out = afterburner_inop(in, spr, R)
@@ -452,28 +486,7 @@ assumptions are identical to those listed for dry operations.
 Fuel type: Jet-A/JP-8
 %}
 
-%{
-Jackson's organization (for reference for now)
-a = flow;
-
-st1 = diffuser(a, spr.int);
-st2 = fan(st1, FAN_pr, eta.fan);
-st2 = duct(st2,spr.LPC);
-st3 = compressor(st2, LPC_pr, eta.Lpc);
-st3 = duct(st3, spr.LPC);
-st4 = compressor(st3, HPC_pr, eta.HPC);
-st4 = duct(st4, spr.HPC);
-st5 = combuster(st4, spr.BRN, Vbar_45);
-st5 = duct(st5,spr.BRN);
-
-W_HPC = st4.h - st3.h;
-W_LPC = st3.h - st2.h;
-W_FAN = st2.h - st1.h;
-W_shaft1 = (W_LPC + W_FAN) / eta.SFT;
-
-st6 = turbine(st5, W_HPC, eta.HPT);
-%}
-
+% Ambient Conditions
 ambient.T = 15+273.15;
 ambient.p = 101.325e3;
 ambient.dmdt = 150;
@@ -490,73 +503,36 @@ u = ambient.M*sqrt(ambient.gamma*R*ambient.T);
 ambient.p0 = ambient.p*(1+(ambient.gamma-1)/2*ambient.M^2)^(ambient.gamma/(ambient.gamma-1));
 ambient.T0 = ambient.T*(1+(ambient.gamma-1)/2*ambient.M^2);
 
-
-
+% Engine Calculations
 engine.diffuser = diffuser(ambient, spr.INT, 0.95, R);
-engine.fan = comp(engine.diffuser, FAN_pr, eta.FAN, 1.02, R)
-% Should account for duct p0 losses here
+engine.fan = comp(engine.diffuser, FAN_pr, eta.FAN, 1.02, R);
+
 core = engine.fan;
 core.dmdt = dmdt_aH;
+core = duct(core, spr.LPC, R);
 bypass = engine.fan;
 bypass.dmdt = dmdt_aC;
-engine.lpc = comp(core, LPC_pr, eta.LPC, 1.5, R)
-% and here
-engine.hpc = comp(engine.lpc, HPC_pr, eta.HPC, 2.3, R)
-% and here
-engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R)
-% and here
-engine.hpt = turb(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT, 0.35, R)
-% not here
-engine.lpt = turb(engine.hpt, (engine.lpc.w*dmdt_aH+engine.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R)
-% and here
-engine.mixer = mixer(engine.hpt, bypass, spr.MXR)
-% and here
-engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R)
-% and here
+bypass = duct(bypass, spr.BPD, R);
+
+engine.lpc = comp(core, LPC_pr, eta.LPC, 1.5, R);
+engine.lpc_ducted = duct(engine.lpc, spr.HPC, R);
+engine.hpc = comp(engine.lpc_ducted, HPC_pr, eta.HPC, 2.3, R);
+engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
+engine.hpt = turb(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT, 0.35, R);
+engine.lpt = turb(engine.hpt, (engine.lpc.w*dmdt_aH+engine.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R);
+engine.mixer = mix(engine.lpt, bypass, spr.MXR, R);
+engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R);
 engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R)
 
-%{
-engine.diffuser = diffuser(ambient, spr.INT, Ar);
-engine.fan = fan(engine.diffuser, FAN_pr, eta.FAN);
-
-core = engine.fan;
-bypass = engine.fan;
-core.dmdt = ambient.dmdt / (1 + BPR);
-bypass.dmdt = ambient.dmdt - core.dmdt;
-bypass = duct(bypass, spr.BPD); 
-core = duct(core, spr.LPC);
-
-engine.lpc = compressor(core, spr.LPC, eta.LPC);
-engine.hpc = compressor(engine.lpc, spr.HPC ,eta.HPC);
-
-engine.hpc.T0 = 800;
-
-engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
-engine.hpt = turbine(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT);
-engine.lpt = turbine(engine.hpt, (core.dmdt*engine.lpc.w+ambient.dmdt*engine.fan.w)/core.dmdt/eta.SFT, eta.LPT);
-engine.mixer = mixer(engine.lpt, bypass, spr.MXR);
-engine.afterburner = afterburner_inop(engine.mixer, spr.ABR);
-engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R);
-
-% parameters needed
-p_4 = engine.hpc.p;
-T_4 = engine.hpc.T;
-dmdt_f = engine.combustor.dmdt_f+engine.afterburner.dmdt_f;
-Q_R = engine.combustor.Q_R;
-u_e = engine.nozzle.u;
-p_e = engine.nozzle.p;
-% derived parameters
-f = dmdt_f/ambient.dmdt;
-
 % Output Parameters
-thrust = (ambient.dmdt+dmdt_f)*u_e-ambient.dmdt*u+pi*d_10^2/4*(p_e-p_a); % Thrust, N
+thrust = (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner.dmdt_f)*u_e-ambient.dmdt*ambient.u+pi*d_10^2/4*(engine.nozzle.p-ambient.p); % Thrust, N
 ST = thrust/ambient.dmdt; % Specific thrust, Ns/kg
-TSFC = dmdt_f/thrust; % Thrust-specific fuel consumption, kg/Ns
+TSFC = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/thrust; % Thrust-specific fuel consumption, kg/Ns
 
-eta_th = (1+f)*(u_e^2-u^2)/(2*f*Q_R); % Thermal efficiency, []
-eta_p = thrust*u/ambient.dmdt/((1+f)*(u_e^2/2)-u^2/2); % Propulsion efficiency, []
+f = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/ambient.dmdt;
+eta_th = (1+f)*(engine.nozzle.u^2-ambient.u^2)/(-2*f*engine.combustor.Q_R); % Thermal efficiency, []
+eta_p = thrust*ambient.u/ambient.dmdt/((1+f)*(engine.nozzle.u^2/2)-ambient.u^2/2); % Propulsion efficiency, []
 eta_0 = eta_th*eta_p; % Overall efficiency, []
 
 LD = 10; % Estimate of cruise lift to drag ratio, []
 s = eta_0*LD*Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), m
-%}
