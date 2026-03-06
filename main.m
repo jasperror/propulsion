@@ -336,27 +336,6 @@ function out = combustor(in, spr, LHV, eta, R)
     out.dmdt = out.dmdt_f+in.dmdt;
 end
 
-function out = mixer(core, bypass, spr)
-% Assuming 100% mixing takes place
-  out = core;
-  mdot_core = core.dmdt;
-  mdot_bypass = bypass.dmdt;
-  mdot_a = mdot_bypass + mdot_core;
-
-  [~,hc,~,~] = air_props(core.T);
-  [~,hb,~,~] = air_props(bypass.T);
-
-  hm = (mdot_core * hc + mdot_bypass * hb) / mdot_a;
-
-  fun = @(T) enthalpy_air(T) - hm;
-  T_mix = fzero(fun, (core.T + bypass.T)/2);
-
-  p_mix = min(core.p, bypass.p);
-  out.p = p_mix * spr;
-  out.T = T_mix;
-  out.dmdt = mdot_a;
-end
-
 function out = mix(core, bypass, spr, R)
     hb = py.CoolProp.CoolProp.PropsSI('H','T',bypass.T,'P',bypass.p,'Air');
     hc = py.CoolProp.CoolProp.PropsSI('H','T',core.T,'P',core.p,'Air');
