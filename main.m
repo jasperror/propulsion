@@ -370,31 +370,63 @@ function out = afterburner_op(in, spr, LHV, eta)
     out.dmdt_f = out.Q_R/LHV/eta;
 end
 
-function out = nozzle(in, spr, eta, R)
-% need to check for choked flow
-    out.h0 = in.h+in.V^2/2;
-    out.h = in.h;
-    out.p0 = in.p0*spr;
-    out.T0 = in.T0;
-    M = in.M;
+function out = nozzle(in, eta, A, R, p_amb)
 
-    [~,~,~,gamma] = air_props(in.T);
-    CPR = (2/(gamma+1))^(gamma/(gamma-1));
-    actual_PR = (2/(gamma+1))^(gamma/(gamma-1)) * ((1+gamma)/(1+gamma*in.M^2)) * (1+(gamma-1)/2*in.M^2)^(gamma/(gamma-1));
-    if CPR >= actual_PR
-        warning('Flow is chocked')
-        T0_star = T0 / ((2*(gamma+1)*M^2 * (1 + ((gamma-1)/2)*M^2)) / (1 + gamma*M^2)^2);
-        p0_star = in.p0*CPR;
-        T_star = in.T / (((1 + gamma) / (1 + gamma*M^2))^2 * M^2);
-        p_star = in.p / ((1 + gamma) / (1 + gamma*M^2));
-        out.T = T_star;
-        out.T0 = T0_star;
-        out.p = p_star;
-        out.p0 = p0_star;
-        out.M = 1;
-        out.u = sqrt(gamma * R * T_star);
-        return
+out = in;
+mdot = in.dmdt;
+h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
+h01 = h1 + in.V^2/2;
+p01 = in.p0;
+T01 = in.T0;
+gamma = in.gamma;
+pr_crit = (2/(gamma+1))^(gamma/(gamma-1));
+
+if p_amb/p01 <= pr_crit
+    
+    %Choked Flow
+
+    out.M = 1;
+    out.T = T01/(1+(gamma-1)/2);
+    out.p = p01*(2/(gamma+1))^(gamma/(gamma-1));
+    out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',out.p,'Air');
+    a = sqrt(gamma*R*out.T);
+    out.V = a;
+
+else
+
+    %Unchhoked Flow
+
+    out.p = p_amb;
+    Tguess = in.T*0.8;
+    err = 1;
+    i = 0;
+
+    while err > 1e-5 && i < 1000
+
+        i = i + 1;
+        rho = py.CoolProp.CoolProp.PropsSI('D','T',Tguess,'P',out.p,'Air');
+        V = mdot/(rho*A);
+        h2 = h01 - V^2/(2*eta);
+        Tnew = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.p,'Air');
+        err = abs((Tnew-Tguess)/Tnew);
+        Tguess = Tnew;
+
     end
+
+    out.T = Tnew;
+    out.V = V;
+    out.rho = rho;
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',out.T,'P',out.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',out.T,'P',out.p,'Air');
+    out.gamma = cp/cv;
+    out.M = out.V/sqrt(out.gamma*R*out.T);
+
+end
+
+out.p0 = out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
+out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+
+end
 
     % i = 0; err = 1; tmp.T = in.T0; tmp.M = 0.5;
     % disp(['p0=',num2str(out.p0*1e-5),', T0=',num2str(out.T0)])
@@ -411,7 +443,7 @@ function out = nozzle(in, spr, eta, R)
     %     tmp.M = M;
     % end
 
-end
+
 
 %% Engine Structure
 
@@ -513,7 +545,7 @@ engine.mixer = mixer(engine.hpt, bypass, spr.MXR)
 % and here
 engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R)
 % and here
-engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R)
+engine.nozzle = nozzle(engine.afterburner, eta.NOZ, pi*(0.78/2)^2, R, ambient.p)
 
 %{
 engine.diffuser = diffuser(ambient, spr.INT, Ar);
