@@ -2,3 +2,4 @@
 *.asv
 *.xlsx
 CEA_pages.mat
+__pycache__
