@@ -181,23 +181,24 @@ function out = turb(in, w_req, eta, Ar, R)
     out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
 end
 
-function out = duct(in, spr)
+function out = duct(in, spr, R)
     out.dmdt = in.dmdt;
     out.p0 = in.p0 * spr;
     out.T0 = in.T0;
-    tmp = in.T; i = 0; err = 1;
+    tmp = in.T; tmpp = in.p; i = 0; err = 1;
     while err > 0.001 && i < 1e4
         i = i + 1;
-        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',out.p,'Air');
-        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',out.p,'Air');
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
+        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
         out.gamma = cp/cv;
-        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',tmpp,'Air');
         out.V = in.rho/out.rho*in.V; % Assuming no change in cross-section area
         out.M = in.V/sqrt(out.gamma*R*tmp);
         out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
-        out.T = out.T0/(1+(gamma-1)/2*out.M^2);
-        err = abs((out.T-tmp)/out.T);
+        out.T = out.T0/(1+(out.gamma-1)/2*out.M^2);
+        err = sqrt(mean( ((out.T-tmp)/out.T)^2+((out.p-tmpp)/out.p)^2 ));
         tmp = out.T;
+        tmpp = out.p;
     end
 end
 
@@ -357,8 +358,8 @@ function out = mixer(core, bypass, spr)
   out.dmdt = mdot_a;
 end
 
-function out = afterburner_inop(in, spr)
-    out = duct(in, spr);
+function out = afterburner_inop(in, spr, R)
+    out = duct(in, spr, R);
     out.dmdt_f = 0;
 end
 
@@ -494,7 +495,11 @@ ambient.T0 = ambient.T*(1+(ambient.gamma-1)/2*ambient.M^2);
 engine.diffuser = diffuser(ambient, spr.INT, 0.95, R);
 engine.fan = comp(engine.diffuser, FAN_pr, eta.FAN, 1.02, R)
 % Should account for duct p0 losses here
-engine.lpc = comp(engine.fan, LPC_pr, eta.LPC, 1.5, R)
+core = engine.fan;
+core.dmdt = dmdt_aH;
+bypass = engine.fan;
+bypass.dmdt = dmdt_aC;
+engine.lpc = comp(core, LPC_pr, eta.LPC, 1.5, R)
 % and here
 engine.hpc = comp(engine.lpc, HPC_pr, eta.HPC, 2.3, R)
 % and here
@@ -503,12 +508,12 @@ engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R)
 engine.hpt = turb(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT, 0.35, R)
 % not here
 engine.lpt = turb(engine.hpt, (engine.lpc.w*dmdt_aH+engine.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R)
-% % and here
-% engine.mixer = mixer()
-% % and here
-% engine.afterburner = afterburner_inop()
-% % and here
-% engine.nozzle = nozzle()
+% and here
+engine.mixer = mixer(engine.hpt, bypass, spr.MXR)
+% and here
+engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R)
+% and here
+engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R)
 
 %{
 engine.diffuser = diffuser(ambient, spr.INT, Ar);
