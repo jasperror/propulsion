@@ -98,23 +98,25 @@ function h = enthalpy_air(T)
 end
 
 function out = diffuser(in, spr, Ar, R) % Assuming adiabatic
-    out = in;
     out.p0 = in.p0 * spr;
+    out.dmdt = in.dmdt;
+    out.T0 = in.T0;
 
-    i = 0; err = 1; tmp = in.T0;
+    i = 0; err = 1; tmp = in.T; tmpp = in.p;
     while err > 0.001 && i < 1e4
         % disp(['DIFFUSER i=',num2str(i),', T=',num2str(tmp)])
         i = i+1;
-        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',out.p,'Air');
-        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',out.p,'Air');
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
+        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
         out.gamma = cp/cv;
-        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',tmpp,'Air');
         out.V = in.rho/out.rho*Ar*in.V;
         out.M = out.V/sqrt(out.gamma*R*tmp);
         out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
         out.T = in.T0/(1+(out.gamma-1)/2*out.M^2);
-        err = abs((out.T-tmp)/out.T);
+        err = sqrt(mean( ((out.T-tmp)/out.T)^2+((out.p-tmpp)/out.p)^2 ));
         tmp = out.T;
+        tmpp = out.p;
     end 
 end
 
@@ -312,7 +314,7 @@ function out = CEARUN(p, T, CEA, Tv)
 end
 
 function out = combustor(in, spr, LHV, eta, R)
-    % Inlet Conditions: V = 250m/s, assuming small nozzle/diffuser to
+    % Inlet Conditions: V = 150m/s, assuming small nozzle/diffuser to
     % adjust flow to this speed?
     
     i = 0; err = 1; tmp = in.T0; tmpp = in.p0;
@@ -322,7 +324,7 @@ function out = combustor(in, spr, LHV, eta, R)
         cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
         cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
         gamma = cp/cv;
-        M = 150/sqrt(gamma*R*tmp);
+        M = in.V/sqrt(gamma*R*tmp);
         T = in.T0/(1+(gamma-1)/2*M^2);
         p = in.p0*(1+(gamma-1)/2*M^2)^(-gamma/(gamma-1));
         err = sqrt(mean( ((T-tmp)/T)^2+((p-tmpp)/p)^2 ));
@@ -337,7 +339,7 @@ function out = combustor(in, spr, LHV, eta, R)
     out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',out.p,'Air');
 
     % Calculate resulting parameters
-    out.V = 150;
+    out.V = in.V;
     out.M = out.V/out.c;
     t0_star = in.T0*(1+out.gamma*out.M^2)^2/(2*(out.gamma+1)*out.M^2*(1+(out.gamma-1)/2*out.M^2));
     out.T0 = t0_star*(in.T0/t0_star + out.Q_R/(out.gamma*R/(out.gamma-1)*t0_star));
@@ -516,9 +518,9 @@ bypass = engine.fan;
 bypass.dmdt = dmdt_aC;
 bypass = duct(bypass, spr.BPD, R);
 
-engine.lpc = comp(core, LPC_pr, eta.LPC, 1.5, R);
+engine.lpc = comp(core, LPC_pr, eta.LPC, 3, R);
 engine.lpc_ducted = duct(engine.lpc, spr.HPC, R);
-engine.hpc = comp(engine.lpc_ducted, HPC_pr, eta.HPC, 2.3, R);
+engine.hpc = comp(engine.lpc_ducted, HPC_pr, eta.HPC, 3, R); % Adjusted to get 150m/s in combustor in static conditions
 engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
 engine.hpt = turb(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT, 0.35, R);
 engine.lpt = turb(engine.hpt, (engine.lpc.w*dmdt_aH+engine.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R);
@@ -526,17 +528,17 @@ engine.mixer = mix(engine.lpt, bypass, spr.MXR, R);
 
 engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R);
 engine.afterburnerop = afterburner_op(engine.mixer, spr.ABRON, LHV);
-engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R)
-
-% Output Parameters
-thrust = (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner.dmdt_f)*u_e-ambient.dmdt*ambient.u+pi*d_10^2/4*(engine.nozzle.p-ambient.p); % Thrust, N
-ST = thrust/ambient.dmdt; % Specific thrust, Ns/kg
-TSFC = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/thrust; % Thrust-specific fuel consumption, kg/Ns
-
-f = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/ambient.dmdt;
-eta_th = (1+f)*(engine.nozzle.u^2-ambient.u^2)/(-2*f*engine.combustor.Q_R); % Thermal efficiency, []
-eta_p = thrust*ambient.u/ambient.dmdt/((1+f)*(engine.nozzle.u^2/2)-ambient.u^2/2); % Propulsion efficiency, []
-eta_0 = eta_th*eta_p; % Overall efficiency, []
-
-LD = 10; % Estimate of cruise lift to drag ratio, []
-s = eta_0*LD*Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), m
+% engine.nozzle = nozzle(engine.afterburner, spr.NOZ, eta.NOZ, R)
+% 
+% % Output Parameters
+% thrust = (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner.dmdt_f)*u_e-ambient.dmdt*ambient.u+pi*d_10^2/4*(engine.nozzle.p-ambient.p); % Thrust, N
+% ST = thrust/ambient.dmdt; % Specific thrust, Ns/kg
+% TSFC = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/thrust; % Thrust-specific fuel consumption, kg/Ns
+% 
+% f = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/ambient.dmdt;
+% eta_th = (1+f)*(engine.nozzle.u^2-ambient.u^2)/(-2*f*engine.combustor.Q_R); % Thermal efficiency, []
+% eta_p = thrust*ambient.u/ambient.dmdt/((1+f)*(engine.nozzle.u^2/2)-ambient.u^2/2); % Propulsion efficiency, []
+% eta_0 = eta_th*eta_p; % Overall efficiency, []
+% 
+% LD = 10; % Estimate of cruise lift to drag ratio, []
+% s = eta_0*LD*Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), m
