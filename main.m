@@ -206,8 +206,8 @@ function out = CEARUN(p, T, CEA, Tv)
     OF = reshape(CEA(1,2,:),[1, size(CEA,3)]);
     phi = reshape(CEA(1,1,:),[1, size(CEA,3)]);
     pv = CEA(:,3,1)';
-    h_air = py.CoolProp.CoolProp.PropsSI('H','T',T,'P',p,'Air')/1000; % Air sp enthalpy [kJ/kg]
-    h_fuel = -284117/151.9; % Jet-A sp enthalpy [kJ/kg]
+    h_air = py.CoolProp.CoolProp.PropsSI('H','T',T,'P',p,'Air')/1000-py.CoolProp.CoolProp.PropsSI('H','T',298.15,'P',101325,'Air')/1000; % Air absolute enthalpy [kJ/kg]
+    h_fuel = -284117/151.9; % Jet-A absolute enthalpy [kJ/kg]
 
     % Lookup Values
     if T < 200 % If outside of bounds then use min/max. There is probably a better way to do this
@@ -299,6 +299,7 @@ function out = CEARUN(p, T, CEA, Tv)
             out.NO = interp2(X, Y, NO, T, p*1e-5);
         end
     end
+    out.Q_R = -(py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',p,'Air')/1000-py.CoolProp.CoolProp.PropsSI('H','T',T,'P',p,'Air')/1000); % super scuffed not using the CEA (impove me!)
 end
 
 function out = combustor(in, spr, LHV, eta, R)
@@ -544,19 +545,30 @@ engine.lpt = turb(engine.hpt, (engine.lpc.w*dmdt_aH+engine.fan.w*ambient.dmdt)/d
 engine.mixer = mix(engine.lpt, bypass, spr.MXR, R);
 
 engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R);
-engine.afterburnerop = afterburner_op(engine.mixer, spr.ABRON, LHV);
+engine.afterburner.Q_R = 0;
+engine.afterburner_op = afterburner_op(engine.mixer, spr.ABRON, LHV);
 engine.nozzle = nozzle(engine.afterburner, eta.NOZ, pi*(0.78/2)^2, R, ambient.p);
+engine.nozzle_op = nozzle(engine.afterburner_op, 0.97, pi*(0.78/2)^2, R, ambient.p);
 
 % Output Parameters
-thrust = (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner.dmdt_f)*engine.nozzle.V-ambient.dmdt*ambient.V+pi*d_10^2/4*(engine.nozzle.p-ambient.p); % Thrust, N
-ST = thrust/ambient.dmdt; % Specific thrust, Ns/kg
-TSFC = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/thrust; % Thrust-specific fuel consumption, kg/Ns
+thrust = [
+    (ambient.dmdt+engine.combustor.dmdt_f)*engine.nozzle.V-ambient.dmdt*ambient.V+pi*d_10^2/4*(engine.nozzle.p-ambient.p);
+    (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner_op.dmdt_f)*engine.nozzle.V-ambient.dmdt*ambient.V+pi*1.15^2/4*(engine.nozzle.p-ambient.p);
+]; % Thrust, N
+ST = thrust./ambient.dmdt; % Specific thrust, Ns/kg
+TSFC = [engine.combustor.dmdt_f; (engine.combustor.dmdt_f+engine.afterburner_op.dmdt_f)]./thrust; % Thrust-specific fuel consumption, kg/Ns
 
-f = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/ambient.dmdt;
-eta_th = (1+f)*(engine.nozzle.V^2-ambient.V^2)/(-2*f*engine.combustor.Q_R); % Thermal efficiency, []
-eta_p = thrust*ambient.V/ambient.dmdt/((1+f)*(engine.nozzle.V^2/2)-ambient.V^2/2); % Propulsion efficiency, []
-eta_0 = eta_th*eta_p; % Overall efficiency, []
+DKE = [
+    (ambient.dmdt+engine.combustor.dmdt_f)*engine.nozzle.V^2/2-ambient.dmdt*ambient.V^2/2;
+    (ambient.dmdt+engine.afterburner_op.dmdt_f+engine.combustor.dmdt_f)*engine.nozzle_op.V^2/2-ambient.dmdt*ambient.V^2/2;
+];
+eta_th = DKE./[-engine.combustor.dmdt_f*1e3*engine.combustor.Q_R; -engine.combustor.dmdt_f*1e3*engine.combustor.Q_R-engine.afterburner_op.dmdt_f*engine.afterburner_op.Q_R*1e3];
+eta_p = thrust.*ambient.V./DKE; % Propulsion efficiency, []
+eta_0 = eta_th.*eta_p; % Overall efficiency, []
+% eta_0 = thrust.*[engine.nozzle.V; engine.nozzle_op.V]./[-engine.combustor.dmdt_f*1e3*engine.combustor.Q_R; -engine.combustor.dmdt_f*1e3*engine.combustor.Q_R-engine.afterburner_op.dmdt_f*engine.afterburner_op.Q_R*1e3];
 
 g=9.81;
-LD = 10; % Estimate of cruise lift to drag ratio, []
-s = eta_0*LD*engine.combustor.Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), m
+LD = 7; % Estimate of cruise lift to drag ratio, []
+s = -eta_0.*LD*engine.combustor.Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), km
+% s = LD*ambient.V/g/TSFC*log(1.66)/1000;
+table(thrust./1000, ST, TSFC, eta_th, eta_p, eta_0 , s,'VariableNames',{'Thrust [kN]','ST','TSFC','eta_th','eta_p','eta_0','s [km]'},'RowNames',{'No ABR','ABR'})
