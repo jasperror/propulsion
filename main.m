@@ -69,6 +69,7 @@ function out = diffuser(in, spr, Ar, R) % Assuming adiabatic
         tmp = out.T;
         tmpp = out.p;
     end 
+    out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
 end
 
 function out = comp(in, pr, eta, Ar, R)
@@ -302,6 +303,7 @@ function out = combustor(in, spr, LHV, eta, R, Tad)
     end
     out = CEARUN(p, T, CEA, Tv);
     out.p = p;
+    out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
     out.p0 = spr*in.p0;
     out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',out.p,'Air');
 
@@ -347,6 +349,7 @@ function out = mix(core, bypass, spr, R)
     out.M = out.V/sqrt(out.gamma*R*out.T);
     out.p0 = spr*out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
     out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+    out.h = h2;
 end
 
 function out = afterburner_inop(in, spr, R)
@@ -568,13 +571,22 @@ R = 287;
 ISA = load('ISA.mat');
 ISA = ISA.ISA;
 
-M = 0.1:0.2:0.7;
-h = 0:5000:15000;
-ISADEV = -10:10:10;
-BPR = 0:0.5:1.5;
-HPCPR = 10:2:16;
-LPCPR = 1.2:0.5:2.2;
-TIT = 1750:250:2250;
+% M = 0.1:0.2:0.7;
+% h = 0:5000:15000;
+% ISADEV = -10:10:10;
+% BPR = 0:0.5:1.5;
+% HPCPR = 10:2:16;
+% LPCPR = 1.2:0.5:2.2;
+% TIT = 1750:250:2250;
+
+
+M = 0.5;
+h = 0;
+ISADEV = 0;
+BPR = 0.57;
+HPCPR = 12.8;
+LPCPR = 1.25;
+TIT = 2000;
 
 N = length(M)*length(h)*length(ISADEV)*length(BPR)*length(HPCPR)*length(LPCPR)*length(TIT);
 
@@ -646,9 +658,23 @@ engine.wet.afterburner = afterburner_op(engine.wet.mixer, spr.ABRON, LHV);
 engine.wet.nozzle = nozzle(engine.wet.afterburner, eta.NOZWET, pi*(0.92/2)^2, R, ambient.p);
 
 % Difference between thrust (dry and wet) and published values
+
 % T-s diagram
-% T-h diagram
-% T-p diagram?
+tv = [ambient.T, engine.dry.diffuser.T, engine.dry.fan.T, engine.dry.lpc.T, engine.dry.hpc.T, engine.dry.combustor.T, engine.dry.hpt.T, engine.dry.lpt.T, engine.dry.mixer.T, engine.dry.afterburner.T, engine.dry.nozzle.T];
+hv = [ambient.h, engine.dry.diffuser.h, engine.dry.fan.h, engine.dry.lpc.h, engine.dry.hpc.h, engine.dry.combustor.h, engine.dry.hpt.h, engine.dry.lpt.h, engine.dry.mixer.h, engine.dry.afterburner.h, engine.dry.nozzle.h];
+pv = [ambient.p, engine.dry.diffuser.p, engine.dry.fan.p, engine.dry.lpc.p, engine.dry.hpc.p, engine.dry.combustor.p, engine.dry.hpt.p, engine.dry.lpt.p, engine.dry.mixer.p, engine.dry.afterburner.p, engine.dry.nozzle.p];
+for i = 1:length(tv)
+    sv(i) = py.CoolProp.CoolProp.PropsSI('S','T',tv(i),'P',pv(i),'Air');
+end
+figure
+plot(sv,tv,'r*-')
+hold on
+plot([sv(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), sv(9)],[tv(1:3),dry.bypass.T,tv(9)],'b-')
+plot([sv(end),sv(1)],[tv(end),tv(1)],'b--')
+text(sv,tv+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
+text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
+ylabel('T [K]')
+xlabel('s, J/kg-K')
                         end
                     end
                 end
