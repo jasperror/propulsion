@@ -670,7 +670,7 @@ figure
 plot(sv,tv,'r*-')
 hold on
 plot([sv(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), sv(9)],[tv(1:3),dry.bypass.T,tv(9)],'b-')
-plot([sv(end),sv(1)],[tv(end),tv(1)],'b--')
+plot([sv(end),sv(1)],[tv(end),tv(1)],'r--')
 text(sv,tv+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
 text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
 ylabel('T [K]')
