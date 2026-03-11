@@ -375,6 +375,7 @@ function out = afterburner_op(in, spr, LHV)
         err = abs((out.p-tmp)/out.p);
         tmp = out.p;
     end
+    out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
 end
 
 function out = nozzle(in, eta, A, R, p_amb)
@@ -579,7 +580,6 @@ ISA = ISA.ISA;
 % LPCPR = 1.2:0.5:2.2;
 % TIT = 1750:250:2250;
 
-
 M = 0.5;
 h = 0;
 ISADEV = 0;
@@ -663,8 +663,9 @@ engine.wet.nozzle = nozzle(engine.wet.afterburner, eta.NOZWET, pi*(0.92/2)^2, R,
 tv = [ambient.T, engine.dry.diffuser.T, engine.dry.fan.T, engine.dry.lpc.T, engine.dry.hpc.T, engine.dry.combustor.T, engine.dry.hpt.T, engine.dry.lpt.T, engine.dry.mixer.T, engine.dry.afterburner.T, engine.dry.nozzle.T];
 hv = [ambient.h, engine.dry.diffuser.h, engine.dry.fan.h, engine.dry.lpc.h, engine.dry.hpc.h, engine.dry.combustor.h, engine.dry.hpt.h, engine.dry.lpt.h, engine.dry.mixer.h, engine.dry.afterburner.h, engine.dry.nozzle.h];
 pv = [ambient.p, engine.dry.diffuser.p, engine.dry.fan.p, engine.dry.lpc.p, engine.dry.hpc.p, engine.dry.combustor.p, engine.dry.hpt.p, engine.dry.lpt.p, engine.dry.mixer.p, engine.dry.afterburner.p, engine.dry.nozzle.p];
-for i = 1:length(tv)
-    sv(i) = py.CoolProp.CoolProp.PropsSI('S','T',tv(i),'P',pv(i),'Air');
+sv = zeros(size(tv));
+for ii = 1:length(tv)
+    sv(ii) = py.CoolProp.CoolProp.PropsSI('S','T',tv(ii),'P',pv(ii),'Air');
 end
 figure
 plot(sv,tv,'r*-')
@@ -675,6 +676,24 @@ text(sv,tv+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ
 text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
 ylabel('T [K]')
 xlabel('s, J/kg-K')
+
+% Normal outputs
+dmdt_f = [engine.dry.combustor.dmdt_f; engine.wet.combustor.dmdt_f+engine.wet.afterburner.dmdt_f];
+thrust = [
+    (ambient.dmdt+engine.dry.combustor.dmdt_f)*engine.dry.nozzle.V-ambient.dmdt*ambient.V+pi*d_10^2/4*(engine.dry.nozzle.p-ambient.p);
+    (ambient.dmdt+engine.wet.combustor.dmdt_f+engine.wet.afterburner.dmdt_f)*engine.wet.nozzle.V-ambient.dmdt*ambient.V+pi*1.15^2/4*(engine.wet.nozzle.p-ambient.p);
+]; % Thrust, N
+ST = thrust./[150; ambient.dmdt]; % Specific thrust, Ns/kg
+TSFC = dmdt_f./thrust; % Thrust-specific fuel consumption, kg/Ns
+DKE = (dmdt_f+[150;ambient.dmdt]).*[engine.dry.nozzle.V^2;engine.wet.nozzle.V^2]./2-[150;ambient.dmdt].*ambient.V^2/2;
+eta_th = DKE./[-engine.dry.combustor.dmdt_f*1e3*engine.dry.combustor.Q_R; -engine.wet.combustor.dmdt_f*1e3*engine.wet.combustor.Q_R-engine.wet.afterburner.dmdt_f*engine.wet.afterburner.Q_R*1e3];
+eta_p = thrust.*ambient.V./DKE; % Propulsion efficiency, []
+eta_0 = eta_th.*eta_p; % Overall efficiency, []
+g=9.81;
+LD = 7; % Estimate of cruise lift to drag ratio, []
+s = LD*ambient.V/g./TSFC.*log(1.66)./1000; % Aircraft range, km
+table(dmdt_f, thrust./1000, ST, TSFC, eta_th, eta_p, eta_0 , s,'VariableNames',{'dmdt_f, [kg/s]','Thrust [kN]','ST','TSFC','eta_th','eta_p','eta_0','s [km]'},'RowNames',{'No ABR','ABR'})
+
                         end
                     end
                 end
