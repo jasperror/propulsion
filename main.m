@@ -160,6 +160,7 @@ function out = duct(in, spr, R)
         tmp = out.T;
         tmpp = out.p;
     end
+    
 end
 
 function out = CEARUN(p, T, CEA, Tv)
@@ -350,6 +351,7 @@ function out = mix(core, bypass, spr, R)
     out.p0 = spr*out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
     out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
     out.h = h2;
+   
 end
 
 function out = afterburner_inop(in, spr, R)
@@ -376,69 +378,81 @@ function out = afterburner_op(in, spr, LHV)
         tmp = out.p;
     end
     out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+    out.s = py.CoolProp.CoolProp.PropsSI('S','T',out.T,'P',out.p,'Air');
+    out.p0 = 350e3;
+
 end
 
-function out = nozzle(in, eta, A, R, p_amb)
+function out = nozzle(in, spr, eta, A_throat, A_exit, R, p_amb)
     
-    out = in;
-    mdot = in.dmdt;
-    h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
-    h01 = h1 + in.V^2/2;
-    p01 = in.p0;
-    T01 = in.T0;
-    gamma = in.gamma;
-    pr_crit = (2/(gamma+1))^(gamma/(gamma-1));
-    
-    if p_amb/p01 <= pr_crit
-        
-        %Choked Flow
-    
-        out.M = 1;
-        out.T = T01/(1+(gamma-1)/2);
-        out.p = p01*(2/(gamma+1))^(gamma/(gamma-1));
-        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',out.p,'Air');
-        a = sqrt(gamma*R*out.T);
-        out.V = a;
-        out.h = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
-        out.h0 = out.h + a^2/2;
-    
-    else
+    p02 = in.p0 * spr;
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',in.T,'P',in.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',in.T,'P',in.p,'Air');
+    gamma = cp/cv;
 
-    %Unchhoked Flow
-    
+    NPR_crit = ((gamma + 1)/2)^(gamma/(gamma - 1));
+    NPR = p02/p_amb;
+    Ar = A_exit/A_throat;
+
+    if Ar ~= 1
+        %afterburner operating -> flow is choked at throat
+
+        T0_n = 2450; % K -> given
+        p0_n = in.p0*spr; % different efficiency
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',T0_n,'P',in.p,'Air'); %static T = stagnation T here
+        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',T0_n,'P',in.p,'Air');
+        gamma = cp/cv;
+
+        fun = @(M_exit) (1/M_exit) * ((2/(gamma+1)) * (1 + (gamma-1)/2 * M_exit^2))^((gamma+1)/(2*(gamma-1))) - Ar;
+        M_exit = fzero(fun,[1.01, 10]);
+
+        T2s = in.T / (1 + (gamma - 1) / 2 * M_exit^2);
+
+        out.T = T0_n - eta*(T0_n - T2s);
+        out.V = sqrt(2*cp*(T0_n - out.T)); 
+        out.p = p0_n/(1+(gamma-1)/2*M_exit^2)^(gamma/(gamma-1));
+        out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+        out.s = py.CoolProp.CoolProp.PropsSI('S','T',out.T,'P',out.p,'Air');
+        out.M = M_exit;
+    end
+
+    if NPR >= NPR_crit && Ar == 1
+        %flow is choked
+
+        T2s = (2*in.T0)/(gamma + 1);
+        out.T = in.T0 - eta*(in.T0 - T2s);
+        out.p = p02/NPR_crit;
+        out.V = sqrt(2*cp*(in.T0 - T2s));
+        out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+        out.s = py.CoolProp.CoolProp.PropsSI('S','T',out.T,'P',out.p,'Air');
+        out.M = 1;
+    elseif NPR <= NPR_crit && Ar == 1
+        %flow is unchoked
         out.p = p_amb;
-        Tguess = in.T*0.8;
-        err = 1;
-        i = 0;
-    
-        while err > 1e-5 && i < 1000
-    
-            i = i + 1;
-            rho = py.CoolProp.CoolProp.PropsSI('D','T',Tguess,'P',out.p,'Air');
-            V = mdot/(rho*A);
-            h2 = h01 - V^2/(2*eta);
-            Tnew = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.p,'Air');
-            err = abs((Tnew-Tguess)/Tnew);
-            Tguess = Tnew;
-    
-        end
-    
-        out.T = Tnew;
-        out.V = V;
-        out.rho = rho;
+        M_exit = sqrt(2/(gamma-1)*((NPR)^((gamma-1)/gamma)));
+        T2s = in.T0/(1+(gamma-1)/2*M_exit^2);
+        out.T = in.T0 - eta*(in.T0 - T2s);
+        out.V = sqrt(2*cp*(in.T0 - T2s));
         cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',out.T,'P',out.p,'Air');
         cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',out.T,'P',out.p,'Air');
         out.gamma = cp/cv;
-        out.M = out.V/sqrt(out.gamma*R*out.T);
-        out.h = h2;
-
+        out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+        out.s = py.CoolProp.CoolProp.PropsSI('S','T',out.T,'P',out.p,'Air');
     end
-
-    out.p0 = out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
-    out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
-
 end
 
+    
+
+
+
+
+   
+
+
+
+
+    
+  
 %% Engine Structure
 
 %{
@@ -632,7 +646,7 @@ engine.dry.hpt = turb(engine.dry.combustor, engine.dry.hpc.w/eta.SFT, eta.HPT, 0
 engine.dry.lpt = turb(engine.dry.hpt, (engine.dry.lpc.w*dmdt_aH+engine.dry.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R);
 engine.dry.mixer = mix(engine.dry.lpt, dry.bypass, spr.MXR, R);
 engine.dry.afterburner = afterburner_inop(engine.dry.mixer, spr.ABR, R);
-engine.dry.nozzle = nozzle(engine.dry.afterburner, eta.NOZ, pi*(0.78/2)^2, R, ambient.p);
+engine.dry.nozzle = nozzle(engine.dry.afterburner, spr.NOZ, eta.NOZ, pi*(0.78/2)^2, pi*(0.78/2)^2, R, ambient.p);
 
 % Wet Engine Calculations
 ambient.dmdt = 165;
@@ -655,7 +669,7 @@ engine.wet.lpt = turb(engine.wet.hpt, (engine.wet.lpc.w*dmdt_aH+engine.wet.fan.w
 engine.wet.mixer = mix(engine.wet.lpt, wet.bypass, spr.MXR, R);
 engine.wet.afterburner = afterburner_op(engine.wet.mixer, spr.ABRON, LHV);
 % throat: 0.92m, exit: 1.15m
-engine.wet.nozzle = nozzle(engine.wet.afterburner, eta.NOZWET, pi*(0.92/2)^2, R, ambient.p);
+engine.wet.nozzle = nozzle(engine.wet.afterburner, spr.NOZ,eta.NOZWET, pi*(0.92/2)^2, pi*(1.15/2)^2, R, ambient.p);
 
 % Difference between thrust (dry and wet) and published values
 
