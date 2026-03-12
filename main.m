@@ -102,13 +102,18 @@ function out = comp(in, pr, eta, Ar, R)
     if out.M > 1
         warning('Mach>1 in compressor stage!')
     end
-    out.p0 = out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
+    %out.p0 = out.p*(1+(out.gamma-1)/2*out.M^2)^((out.gamma-1)/(out.gamma));
+    out.p0 = in.p0 * pr;
     out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
-    out.w = h2-h1+0.5*(out.V^2-in.V^2);
+    % out.w = h2-h1+0.5*(out.V^2-in.V^2);
+    out.w = cp*(out.T0 - in.T0);
 end
 
 function out = turb(in, w_req, eta, Ar, R)
     out.dmdt = in.dmdt;
+    if in.T > 2000
+        in.T = 2000;
+    end
     h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
     h01 = h1 + in.V^2/2;
     s1 = py.CoolProp.CoolProp.PropsSI('S','T',in.T,'P',in.p,'Air');
@@ -141,26 +146,46 @@ end
 
 function out = duct(in, spr, R)
     out.dmdt = in.dmdt;
-    out.p0 = in.p0 * spr;
-    out.T0 = in.T0;
-    tmp = in.T; tmpp = in.p; i = 0; err = 1;
-    while err > 0.001 && i < 1e4
-        i = i + 1;
-        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
-        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
-        out.gamma = cp/cv;
-        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',tmpp,'Air');
-        out.V = in.rho/out.rho*in.V; % Assuming no change in cross-section area
-        out.M = in.V/sqrt(out.gamma*R*tmp);
-        out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
-        out.T = out.T0/(1+(out.gamma-1)/2*out.M^2);
-        err = sqrt(mean( ((out.T-tmp)/out.T)^2+((out.p-tmpp)/out.p)^2 ));
-        out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
-        out.h0 = out.h + out.V^2/2;
-        tmp = out.T;
-        tmpp = out.p;
-    end
-    
+    out.p0   = in.p0 * spr;
+    out.T0   = in.T0;
+
+    % Use inlet Mach - constant area duct, M changes negligibly with small spr
+    M_in = in.M;
+
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',in.T,'P',in.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',in.T,'P',in.p,'Air');
+    out.gamma = cp/cv;
+
+    out.T   = out.T0 / (1 + (out.gamma-1)/2 * M_in^2);
+    out.p   = out.p0 * (1 + (out.gamma-1)/2 * M_in^2)^(-out.gamma/(out.gamma-1));
+    out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',out.p,'Air');
+    out.V   = M_in * sqrt(out.gamma * R * out.T);
+    out.M   = M_in;
+    out.h   = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+    out.h0  = out.h + out.V^2/2;
+
+
+    % out.dmdt = in.dmdt;
+    % out.p0 = in.p0 * spr;
+    % out.T0 = in.T0;
+    % tmp = in.T; tmpp = in.p; i = 0; err = 1;
+    % while err > 0.001 && i < 1e4
+    %     i = i + 1;
+    %     cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
+    %     cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
+    %     out.gamma = cp/cv;
+    %     out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',tmpp,'Air');
+    %     out.V = in.rho/out.rho*in.V; % Assuming no change in cross-section area
+    %     out.M = out.V/sqrt(out.gamma*R*tmp); % out.V instead of in.V
+    %     out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
+    %     out.T = out.T0/(1+(out.gamma-1)/2*out.M^2);
+    %     err = sqrt(mean( ((out.T-tmp)/out.T)^2+((out.p-tmpp)/out.p)^2 ));
+    %     out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+    %     out.h0 = out.h + out.V^2/2;
+    %     tmp = out.T;
+    %     tmpp = out.p;
+    % end
+    % 
 end
 
 function out = CEARUN(p, T, CEA, Tv)
@@ -313,8 +338,8 @@ function out = combustor(in, spr, LHV, eta, R, Tad)
     out.M = out.V/out.c;
     t0_star = in.T0*(1+out.gamma*out.M^2)^2/(2*(out.gamma+1)*out.M^2*(1+(out.gamma-1)/2*out.M^2));
     out.T0 = t0_star*(in.T0/t0_star + out.Q_R/(out.gamma*R/(out.gamma-1)*t0_star));
-    out.dmdt_f = -out.Q_R*in.dmdt/LHV/eta;
-    out.dmdt = out.dmdt_f+in.dmdt;
+     out.dmdt_f = in.dmdt * (-out.Q_R) / (LHV*eta - (-out.Q_R));
+    out.dmdt = out.dmdt_f + in.dmdt;
     out.h0 = out.h + out.V^2/2;
 end
 
@@ -379,11 +404,11 @@ function out = afterburner_op(in, spr, LHV)
     end
     out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
     out.s = py.CoolProp.CoolProp.PropsSI('S','T',out.T,'P',out.p,'Air');
-    out.p0 = 350e3;
+
 
 end
 
-function out = nozzle(in, spr, eta, A_throat, A_exit, R, p_amb)
+function out = nozzle(in, spr, eta, A_throat, A_exit, p_amb)
     
     p02 = in.p0 * spr;
     cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',in.T,'P',in.p,'Air');
@@ -406,7 +431,7 @@ function out = nozzle(in, spr, eta, A_throat, A_exit, R, p_amb)
         fun = @(M_exit) (1/M_exit) * ((2/(gamma+1)) * (1 + (gamma-1)/2 * M_exit^2))^((gamma+1)/(2*(gamma-1))) - Ar;
         M_exit = fzero(fun,[1.01, 10]);
 
-        T2s = in.T / (1 + (gamma - 1) / 2 * M_exit^2);
+        T2s = T0_n / (1 + (gamma - 1) / 2 * M_exit^2);
 
         out.T = T0_n - eta*(T0_n - T2s);
         out.V = sqrt(2*cp*(T0_n - out.T)); 
@@ -422,17 +447,18 @@ function out = nozzle(in, spr, eta, A_throat, A_exit, R, p_amb)
         T2s = (2*in.T0)/(gamma + 1);
         out.T = in.T0 - eta*(in.T0 - T2s);
         out.p = p02/NPR_crit;
-        out.V = sqrt(2*cp*(in.T0 - T2s));
+        % out.V = sqrt(2*cp*(in.T0 - T2s));
+        out.V = sqrt(2*cp*(in.T0 - out.T));  
         out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
         out.s = py.CoolProp.CoolProp.PropsSI('S','T',out.T,'P',out.p,'Air');
         out.M = 1;
     elseif NPR <= NPR_crit && Ar == 1
         %flow is unchoked
         out.p = p_amb;
-        M_exit = sqrt(2/(gamma-1)*((NPR)^((gamma-1)/gamma)));
+        M_exit = sqrt(2/(gamma-1)*((NPR)^((gamma-1)/gamma)-1));
         T2s = in.T0/(1+(gamma-1)/2*M_exit^2);
         out.T = in.T0 - eta*(in.T0 - T2s);
-        out.V = sqrt(2*cp*(in.T0 - T2s));
+        out.V = sqrt(2*cp*(in.T0 - out.T));
         cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',out.T,'P',out.p,'Air');
         cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',out.T,'P',out.p,'Air');
         out.gamma = cp/cv;
@@ -646,7 +672,7 @@ engine.dry.hpt = turb(engine.dry.combustor, engine.dry.hpc.w/eta.SFT, eta.HPT, 0
 engine.dry.lpt = turb(engine.dry.hpt, (engine.dry.lpc.w*dmdt_aH+engine.dry.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R);
 engine.dry.mixer = mix(engine.dry.lpt, dry.bypass, spr.MXR, R);
 engine.dry.afterburner = afterburner_inop(engine.dry.mixer, spr.ABR, R);
-engine.dry.nozzle = nozzle(engine.dry.afterburner, spr.NOZ, eta.NOZ, pi*(0.78/2)^2, pi*(0.78/2)^2, R, ambient.p);
+engine.dry.nozzle = nozzle(engine.dry.afterburner, spr.NOZ, eta.NOZ, pi*(0.78/2)^2, pi*(0.78/2)^2, ambient.p);
 
 % Wet Engine Calculations
 ambient.dmdt = 165;
@@ -669,7 +695,7 @@ engine.wet.lpt = turb(engine.wet.hpt, (engine.wet.lpc.w*dmdt_aH+engine.wet.fan.w
 engine.wet.mixer = mix(engine.wet.lpt, wet.bypass, spr.MXR, R);
 engine.wet.afterburner = afterburner_op(engine.wet.mixer, spr.ABRON, LHV);
 % throat: 0.92m, exit: 1.15m
-engine.wet.nozzle = nozzle(engine.wet.afterburner, spr.NOZ,eta.NOZWET, pi*(0.92/2)^2, pi*(1.15/2)^2, R, ambient.p);
+engine.wet.nozzle = nozzle(engine.wet.afterburner, spr.NOZ,eta.NOZWET, pi*(0.92/2)^2, pi*(1.15/2)^2, ambient.p);
 
 % Difference between thrust (dry and wet) and published values
 
@@ -690,18 +716,23 @@ text(sv,tv+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ
 text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
 ylabel('T [K]')
 xlabel('s, J/kg-K')
-
+dmdt_dry = 150;
+dmdt_wet = 165;
 % Normal outputs
 dmdt_f = [engine.dry.combustor.dmdt_f; engine.wet.combustor.dmdt_f+engine.wet.afterburner.dmdt_f];
 thrust = [
-    (ambient.dmdt+engine.dry.combustor.dmdt_f)*engine.dry.nozzle.V-ambient.dmdt*ambient.V+pi*d_10^2/4*(engine.dry.nozzle.p-ambient.p);
-    (ambient.dmdt+engine.wet.combustor.dmdt_f+engine.wet.afterburner.dmdt_f)*engine.wet.nozzle.V-ambient.dmdt*ambient.V+pi*1.15^2/4*(engine.wet.nozzle.p-ambient.p);
+    (dmdt_dry+engine.dry.combustor.dmdt_f)*engine.dry.nozzle.V-dmdt_dry*ambient.V+pi*d_10^2/4*(engine.dry.nozzle.p-ambient.p);
+    (dmdt_wet+engine.wet.combustor.dmdt_f+engine.wet.afterburner.dmdt_f)*engine.wet.nozzle.V-dmdt_wet*ambient.V+pi*1.15^2/4*(engine.wet.nozzle.p-ambient.p);
 ]; % Thrust, N
-ST = thrust./[150; ambient.dmdt]; % Specific thrust, Ns/kg
+ST = thrust./[150; 165]; % Specific thrust, Ns/kg
 TSFC = dmdt_f./thrust; % Thrust-specific fuel consumption, kg/Ns
-DKE = (dmdt_f+[150;ambient.dmdt]).*[engine.dry.nozzle.V^2;engine.wet.nozzle.V^2]./2-[150;ambient.dmdt].*ambient.V^2/2;
-eta_th = DKE./[engine.dry.combustor.dmdt_f*1e3*LHV; engine.wet.combustor.dmdt_f*1e3*LHV+engine.wet.afterburner.dmdt_f*LHV*1e3];
-eta_p = thrust.*ambient.V./DKE; % Propulsion efficiency, []
+DKE = (dmdt_f+[150;165]).*[engine.dry.nozzle.V^2;engine.wet.nozzle.V^2]./2-[150;ambient.dmdt].*ambient.V^2/2;
+% eta_th = DKE./[engine.dry.combustor.dmdt_f*1e3*LHV; engine.wet.combustor.dmdt_f*1e3*LHV+engine.wet.afterburner.dmdt_f*LHV*1e3];
+P_dry = DKE(1) + (engine.dry.nozzle.p - ambient.p) * engine.dry.nozzle.V * pi*(d_10/2)^2;
+P_wet = DKE(2) + (engine.wet.nozzle.p - ambient.p) * engine.wet.nozzle.V * pi*(1.15/2)^2;
+eta_p = thrust.*ambient.V./[P_dry; P_wet];
+eta_th = [P_dry; P_wet] ./ [engine.dry.combustor.dmdt_f*1e3*LHV; engine.wet.combustor.dmdt_f*1e3*LHV+engine.wet.afterburner.dmdt_f*LHV*1e3];
+% eta_p = thrust.*ambient.V./DKE; % Propulsion efficiency, []
 eta_0 = eta_th.*eta_p; % Overall efficiency, []
 g=9.81;
 LD = 7; % Estimate of cruise lift to drag ratio, []
