@@ -7,23 +7,12 @@ tic
 %% Constants
 
 % Design-point Operating Conditions
-% dmdt_a = 150; % Total air mass flow rate, kg/s
-% pr = 28; % Overall pressure ratio, []
-% T_5 = 2000; % TIT, K
-% BPR = 0.57; % Bypass ratio, []
 FAN_pr = 1.75; % Fan pressure ratio, []
-% LPC_pr = 1.25; % LPC pressure ratio, []
-% HPC_pr = 12.8; % HPC pressure ratio, []
 LHV = 43150; % Fuel heating value, kJ/kg
-% T_a = 288.15; % Design point ambient temperature, K
-% p_a = 101.325e3; % Ambient pressure, Pa
 
 % Flow & Geometric Assumptions
-% M_1 = 0.5; % Fan inlet mach number, []
-% Vbar_45 = 150; % Combustor average axial velocity, m/s
 d_9 = 0.78; % Nozzle throat diameter, m
 d_10 = 0.78; % Nozzle exit diameter, m
-% M_7 = 0.5; % Turbine exit mach number, []
 
 % Component Efficiencies
 eta.FAN = 0.89; % Fan efficiency, []
@@ -582,100 +571,11 @@ assumptions are identical to those listed for dry operations.
 Fuel type: Jet-A/JP-8
 %}
 
-%{
-% Ambient Conditions
-ambient.T = 15+273.15;
-ambient.p = 101.325e3;
-ambient.dmdt = 150;
-ambient.rho = py.CoolProp.CoolProp.PropsSI('D','T',ambient.T,'P',ambient.p,'Air');
-R = 287;
-ambient.M = 0.5;
-cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',ambient.T,'P',ambient.p,'Air');
-cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',ambient.T,'P',ambient.p,'Air');
-ambient.h = py.CoolProp.CoolProp.PropsSI('H','T',ambient.T,'P',ambient.p,'Air');
-ambient.gamma = cp/cv;
-ambient.V = ambient.M*sqrt(ambient.gamma*R*ambient.T);
-ambient.h0 = ambient.h + ambient.V^2/2;
-dmdt_aH = ambient.dmdt/(BPR+1);
-dmdt_aC = BPR*ambient.dmdt/(BPR+1);
-u = ambient.M*sqrt(ambient.gamma*R*ambient.T);
-ambient.p0 = ambient.p*(1+(ambient.gamma-1)/2*ambient.M^2)^(ambient.gamma/(ambient.gamma-1));
-ambient.T0 = ambient.T*(1+(ambient.gamma-1)/2*ambient.M^2);
-
-% Engine Calculations
-engine.diffuser = diffuser(ambient, spr.INT, 0.95, R);
-engine.fan = comp(engine.diffuser, FAN_pr, eta.FAN, 1.02, R);
-
-core = engine.fan;
-core.dmdt = dmdt_aH;
-core = duct(core, spr.LPC, R);
-bypass = engine.fan;
-bypass.dmdt = dmdt_aC;
-bypass = duct(bypass, spr.BPD, R);
-
-
-engine.lpc = comp(core, LPC_pr, eta.LPC, 3, R);
-engine.lpc_ducted = duct(engine.lpc, spr.HPC, R);
-engine.hpc = comp(engine.lpc_ducted, HPC_pr, eta.HPC, 3, R); % Adjusted to get 150m/s in combustor in static conditions
-engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R, 2000);
-engine.hpt = turb(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT, 0.35, R);
-engine.lpt = turb(engine.hpt, (engine.lpc.w*dmdt_aH+engine.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R);
-engine.mixer = mix(engine.lpt, bypass, spr.MXR, R);
-
-engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R);
-engine.afterburner.Q_R = 0;
-engine.afterburner_op = afterburner_op(engine.mixer, spr.ABRON, LHV);
-engine.nozzle = nozzle(engine.afterburner, eta.NOZ, pi*(0.78/2)^2, R, ambient.p);
-engine.nozzle_op = nozzle(engine.afterburner_op, 0.97, pi*(0.92/2)^2, R, ambient.p);
-
-% Output Parameters
-
-thrust = (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner.dmdt_f)*engine.nozzle.V-ambient.dmdt*ambient.V+pi*d_10^2/4*(engine.nozzle.p-ambient.p); % Thrust, N
-ST = thrust/ambient.dmdt; % Specific thrust, Ns/kg
-%TSFC = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/thrust; % Thrust-specific fuel consumption, kg/Ns
-mdot_total = ambient.dmdt + engine.combustor.dmdt_f + engine.afterburner.dmdt_f;
-mdot_f_total = engine.combustor.dmdt_f + engine.afterburner.dmdt_f;
-
-f = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/ambient.dmdt;
-eta_th = (mdot_total*(engine.nozzle.V^2/2 - ambient.V^2/2)/(mdot_f_total*LHV*1000));
-eta_p = thrust*ambient.V/ambient.dmdt/((1+f)*(engine.nozzle.V^2/2)-ambient.V^2/2); % Propulsion efficiency, []
-eta_0 = eta_th*eta_p; % Overall efficiency, []
-
-g=9.81;
-LD = 10; % Estimate of cruise lift to drag ratio, []
-s = -(eta_0*LD*engine.combustor.Q_R/g*log(1.66)); % Aircraft range (assuming fuel is 40% of aircraft weight), m
-
-thrust = [
-    (ambient.dmdt+engine.combustor.dmdt_f)*engine.nozzle.V-ambient.dmdt*ambient.V+pi*d_10^2/4*(engine.nozzle.p-ambient.p);
-    (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner_op.dmdt_f)*engine.nozzle.V-ambient.dmdt*ambient.V+pi*1.15^2/4*(engine.nozzle.p-ambient.p);
-]; % Thrust, N
-ST = thrust./ambient.dmdt; % Specific thrust, Ns/kg
-TSFC = [engine.combustor.dmdt_f; (engine.combustor.dmdt_f+engine.afterburner_op.dmdt_f)]./thrust; % Thrust-specific fuel consumption, kg/Ns
-
-DKE = [
-    (ambient.dmdt+engine.combustor.dmdt_f)*engine.nozzle.V^2/2-ambient.dmdt*ambient.V^2/2;
-    (ambient.dmdt+engine.afterburner_op.dmdt_f+engine.combustor.dmdt_f)*engine.nozzle_op.V^2/2-ambient.dmdt*ambient.V^2/2;
-];
-eta_th = DKE./[-engine.combustor.dmdt_f*1e3*engine.combustor.Q_R; -engine.combustor.dmdt_f*1e3*engine.combustor.Q_R-engine.afterburner_op.dmdt_f*engine.afterburner_op.Q_R*1e3];
-eta_p = thrust.*ambient.V./DKE; % Propulsion efficiency, []
-eta_0 = eta_th.*eta_p; % Overall efficiency, []
-% eta_0 = thrust.*[engine.nozzle.V; engine.nozzle_op.V]./[-engine.combustor.dmdt_f*1e3*engine.combustor.Q_R; -engine.combustor.dmdt_f*1e3*engine.combustor.Q_R-engine.afterburner_op.dmdt_f*engine.afterburner_op.Q_R*1e3];
-
-g=9.81;
-LD = 7; % Estimate of cruise lift to drag ratio, []
-s = -eta_0.*LD*engine.combustor.Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), km
-% s = LD*ambient.V/g/TSFC*log(1.66)/1000;
-table(thrust./1000, ST, TSFC, eta_th, eta_p, eta_0 , s,'VariableNames',{'Thrust [kN]','ST','TSFC','eta_th','eta_p','eta_0','s [km]'},'RowNames',{'No ABR','ABR'})
-
-%}
-
-
-
-
 R = 287;
 ISA = load('ISA.mat');
 ISA = ISA.ISA;
 
+% Trend-test variables
 M=[0.1, 0.3, 0.5, 0.6];
 h = 0:5000:15000;
 ISADEV = -10:10:10;
@@ -684,6 +584,7 @@ HPCPR = 10:2:16;
 LPCPR = 1.2:0.5:2.2;
 TIT = 1750:250:2250;
 
+% One-test variables
 % M = 0.5;
 % h = 0;
 % ISADEV = 0;
@@ -769,58 +670,59 @@ engine.wet.hpt = turb(engine.wet.combustor, engine.wet.hpc.w/eta.SFT, eta.HPT, 0
 engine.wet.lpt = turb(engine.wet.hpt, (engine.wet.lpc.w*dmdt_aH+engine.wet.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R);
 engine.wet.mixer = mix(engine.wet.lpt, wet.bypass, spr.MXR, R);
 engine.wet.afterburner = afterburner_op(engine.wet.mixer, spr.ABRON, LHV);
-% throat: 0.92m, exit: 1.15m
 engine.wet.nozzle = nozzle(engine.wet.afterburner, spr.NOZ,eta.NOZWET, pi*(0.92/2)^2, pi*(1.15/2)^2, ambient.p);
 
 % Difference between thrust (dry and wet) and published values
 
 % T-s diagram
-% tv = [ambient.T, engine.dry.diffuser.T, engine.dry.fan.T, engine.dry.lpc.T, engine.dry.hpc.T, engine.dry.combustor.T, engine.dry.hpt.T, engine.dry.lpt.T, engine.dry.mixer.T, engine.dry.afterburner.T, engine.dry.nozzle.T];
-% hv = [ambient.h, engine.dry.diffuser.h, engine.dry.fan.h, engine.dry.lpc.h, engine.dry.hpc.h, engine.dry.combustor.h, engine.dry.hpt.h, engine.dry.lpt.h, engine.dry.mixer.h, engine.dry.afterburner.h, engine.dry.nozzle.h];
-% pv = [ambient.p, engine.dry.diffuser.p, engine.dry.fan.p, engine.dry.lpc.p, engine.dry.hpc.p, engine.dry.combustor.p, engine.dry.hpt.p, engine.dry.lpt.p, engine.dry.mixer.p, engine.dry.afterburner.p, engine.dry.nozzle.p];
-% sv = zeros(size(tv));
-% for ii = 1:length(tv)
-%     sv(ii) = py.CoolProp.CoolProp.PropsSI('S','T',tv(ii),'P',pv(ii),'Air');
-% end
-% % figure
-% % plot(svw,tvw,'r*-')
-% % hold on
-% % plot([svw(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), svw(9)],[tvw(1:3),dry.bypass.T,tvw(9)],'b-')
-% % plot([svw(end),svw(1)],[tvw(end),tvw(1)],'r--')
-% % text(svw,tvw+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
-% % text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
-% % ylabel('T [K]')
-% % xlabel('s, J/kg-K')
-% 
-% 
-% tvw = [ambient.T, engine.wet.diffuser.T, engine.wet.fan.T, engine.wet.lpc.T, engine.wet.hpc.T, engine.wet.combustor.T, engine.wet.hpt.T, engine.wet.lpt.T, engine.wet.mixer.T, engine.wet.afterburner.T, engine.wet.nozzle.T];
-% hvw = [ambient.h, engine.wet.diffuser.h, engine.wet.fan.h, engine.wet.lpc.h, engine.wet.hpc.h, engine.wet.combustor.h, engine.wet.hpt.h, engine.wet.lpt.h, engine.wet.mixer.h, engine.wet.afterburner.h, engine.wet.nozzle.h];
-% pvw = [ambient.p, engine.wet.diffuser.p, engine.wet.fan.p, engine.wet.lpc.p, engine.wet.hpc.p, engine.wet.combustor.p, engine.wet.hpt.p, engine.wet.lpt.p, engine.wet.mixer.p, engine.wet.afterburner.p, engine.wet.nozzle.p];
-% svw = zeros(size(tvw));
-% for ii = 1:length(tvw)
-%     svw(ii) = py.CoolProp.CoolProp.PropsSI('S','T',tvw(ii),'P',pvw(ii),'Air');
-% end
+%{
+tv = [ambient.T, engine.dry.diffuser.T, engine.dry.fan.T, engine.dry.lpc.T, engine.dry.hpc.T, engine.dry.combustor.T, engine.dry.hpt.T, engine.dry.lpt.T, engine.dry.mixer.T, engine.dry.afterburner.T, engine.dry.nozzle.T];
+hv = [ambient.h, engine.dry.diffuser.h, engine.dry.fan.h, engine.dry.lpc.h, engine.dry.hpc.h, engine.dry.combustor.h, engine.dry.hpt.h, engine.dry.lpt.h, engine.dry.mixer.h, engine.dry.afterburner.h, engine.dry.nozzle.h];
+pv = [ambient.p, engine.dry.diffuser.p, engine.dry.fan.p, engine.dry.lpc.p, engine.dry.hpc.p, engine.dry.combustor.p, engine.dry.hpt.p, engine.dry.lpt.p, engine.dry.mixer.p, engine.dry.afterburner.p, engine.dry.nozzle.p];
+sv = zeros(size(tv));
+for ii = 1:length(tv)
+    sv(ii) = py.CoolProp.CoolProp.PropsSI('S','T',tv(ii),'P',pv(ii),'Air');
+end
 % figure
-% tiledlayout(1,2,'TileSpacing','compact')
-% nexttile
 % plot(svw,tvw,'r*-')
 % hold on
-% plot([svw(1:3),py.CoolProp.CoolProp.PropsSI('S','T',wet.bypass.T,'P',wet.bypass.p,'Air'), svw(9)],[tvw(1:3),wet.bypass.T,tvw(9)],'b-')
+% plot([svw(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), svw(9)],[tvw(1:3),dry.bypass.T,tvw(9)],'b-')
 % plot([svw(end),svw(1)],[tvw(end),tvw(1)],'r--')
 % text(svw,tvw+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
-% text(py.CoolProp.CoolProp.PropsSI('S','T',wet.bypass.T,'P',wet.bypass.p,'Air'),wet.bypass.T+10,'BPD')
-% ylabel('T [K]')
-% xlabel('s, J/kg-K')
-% 
-% nexttile
-% plot(sv,tv,'r*-')
-% hold on
-% plot([sv(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), sv(9)],[tv(1:3),dry.bypass.T,tv(9)],'b-')
-% plot([sv(end),sv(1)],[tv(end),tv(1)],'r--')
-% text(sv,tv+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
 % text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
 % ylabel('T [K]')
 % xlabel('s, J/kg-K')
+
+
+tvw = [ambient.T, engine.wet.diffuser.T, engine.wet.fan.T, engine.wet.lpc.T, engine.wet.hpc.T, engine.wet.combustor.T, engine.wet.hpt.T, engine.wet.lpt.T, engine.wet.mixer.T, engine.wet.afterburner.T, engine.wet.nozzle.T];
+hvw = [ambient.h, engine.wet.diffuser.h, engine.wet.fan.h, engine.wet.lpc.h, engine.wet.hpc.h, engine.wet.combustor.h, engine.wet.hpt.h, engine.wet.lpt.h, engine.wet.mixer.h, engine.wet.afterburner.h, engine.wet.nozzle.h];
+pvw = [ambient.p, engine.wet.diffuser.p, engine.wet.fan.p, engine.wet.lpc.p, engine.wet.hpc.p, engine.wet.combustor.p, engine.wet.hpt.p, engine.wet.lpt.p, engine.wet.mixer.p, engine.wet.afterburner.p, engine.wet.nozzle.p];
+svw = zeros(size(tvw));
+for ii = 1:length(tvw)
+    svw(ii) = py.CoolProp.CoolProp.PropsSI('S','T',tvw(ii),'P',pvw(ii),'Air');
+end
+figure
+tiledlayout(1,2,'TileSpacing','compact')
+nexttile
+plot(svw,tvw,'r*-')
+hold on
+plot([svw(1:3),py.CoolProp.CoolProp.PropsSI('S','T',wet.bypass.T,'P',wet.bypass.p,'Air'), svw(9)],[tvw(1:3),wet.bypass.T,tvw(9)],'b-')
+plot([svw(end),svw(1)],[tvw(end),tvw(1)],'r--')
+text(svw,tvw+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
+text(py.CoolProp.CoolProp.PropsSI('S','T',wet.bypass.T,'P',wet.bypass.p,'Air'),wet.bypass.T+10,'BPD')
+ylabel('T [K]')
+xlabel('s, J/kg-K')
+
+nexttile
+plot(sv,tv,'r*-')
+hold on
+plot([sv(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), sv(9)],[tv(1:3),dry.bypass.T,tv(9)],'b-')
+plot([sv(end),sv(1)],[tv(end),tv(1)],'r--')
+text(sv,tv+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
+text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
+ylabel('T [K]')
+xlabel('s, J/kg-K')
+%}
 
 % Normal outputs
 dmdt_dry = 150;
@@ -874,99 +776,7 @@ co2e_w(i,j,k,l,m,n,o) = engine.wet.combustor.CO2e+engine.wet.afterburner.CO2e;
 end
 toc
 
-%% Results
-% [X,Y] = meshgrid(TIT,HPCPR);
-% figure
-% surf(X,Y, reshape(s_d(end,1,2,2,:,1,:),size(s_d,[5,7])))
-% figure
-% surf(X,Y, reshape(nox_d(end,1,2,2,:,1,:),size(s_d,[5,7])))
-
-% close all;
-% figure('Name','Dry eta_0 vs h&M')
-% plot(M, reshape(eta_0_d(:,:,2,2,2,1,2),size(eta_0_d,[1,2])))
-% xlabel('M')
-% ylabel("\eta_0")
-% legend('h=0','h=5000m','h=10000m','h=15000m')
-% title('ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2, TIT=2000K')
-% 
-% figure('Name','Dry TSFC & ST vs h & M')
-% plot(M, reshape(TSFC_d(:,:,2,2,2,1,2),size(eta_0_d,[1,2])))
-% xlabel('M')
-% ylabel('TSFC')
-% yyaxis right
-% plot(M, reshape(ST_d(:,:,2,2,2,1,2),size(eta_0_d,[1,2])))
-% ylabel('ST')
-% legend('h=0','h=5000m','h=10000m','h=15000m','h=0','h=5000m','h=10000m','h=15000m')
-% title('ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2, TIT=2000K')
-% 
-% figure('Name','Dry TSFC & ST vs TIT & M')
-% plot(M, reshape(TSFC_d(:,1,2,2,2,1,:),size(eta_0_d,[1,7])))
-% xlabel('M')
-% ylabel('TSFC')
-% yyaxis right
-% plot(M, reshape(ST_d(:,1,2,2,2,1,:),size(eta_0_d,[1,7])))
-% ylabel('ST')
-% legend('1750K','2000K','2250K','1750K','2000K','2250K')
-% title('h=0, ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2')
-% 
-% figure('Name',"Dry eta_0 vs TIT & M")
-% plot(M, reshape(eta_0_d(:,1,2,2,2,1,:),size(eta_0_d,[1,7])))
-% xlabel('M')
-% ylabel("\eta_0")
-% legend('1750K','2000K','2250K')
-% title('h=0, ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2')
-% 
-% figure('Name','Dry TSFC & ST vs HPC PR & LPC PR')
-% plot(HPCPR, reshape(TSFC_d(3,1,2,2,:,:,2),size(eta_0_d,[5,6])))
-% xlabel('HPC PR')
-% ylabel('TSFC')
-% yyaxis right
-% plot(HPCPR, reshape(ST_d(3,1,2,2,:,:,2),size(eta_0_d,[5,6])))
-% ylabel('ST')
-% legend("pr_{LPC}=1.2",'1.7','2.2','1.2','1.7','2.2')
-% title('M=0.5, h=0, ISADEV=0, BPR=0.5, TIT=2000K')
-% 
-% figure('Name','Dry CO2e & NOx vs h & M')
-% plot(M, reshape(co2e_d(:,:,2,2,2,1,2),size(eta_0_d,[1,2])))
-% xlabel('M')
-% ylabel('CO2e [kg/kg]')
-% yyaxis right
-% plot(M, reshape(nox_d(:,:,2,2,2,1,2),size(eta_0_d,[1,2])))
-% ylabel('NOx [kg/kg]')
-% legend('h=0','h=5000m','h=10000m','h=15000m','h=0','h=5000m','h=10000m','h=15000m')
-% title('ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2, TIT=2000K')
-% 
-% figure('Name','Dry CO2e & NOx vs TIT & M')
-% plot(M, reshape(co2e_d(:,1,2,2,2,1,:),size(eta_0_d,[1,7])))
-% xlabel('M')
-% ylabel('CO2e [kg/kg]')
-% yyaxis right
-% plot(M, reshape(nox_d(:,1,2,2,2,1,:),size(eta_0_d,[1,7])))
-% ylabel('NOx [kg/kg]')
-% legend('TIT=1750K','2000K','2250K','1750K','2000K','2250K')
-% title('h=0, ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2')
-
-% Outputs
-% ST + TSFC
-% eta_0 + eta_th + eta_p
-% NOx + CO2e
-
-% Inputs
-% M & BPR
-% M & TIT
-% M & h
-% % h & ISADEV
-% HPCPR & LPCPR
-% HPCPR & TIT @ M1, M2, M3, M4
-
-% for i = 1:length(M)
-% for j = 1:length(h)
-% for k = 1:length(ISADEV)
-% for l = 1:length(BPR)
-% for m = 1:length(HPCPR)
-% for n = 1:length(LPCPR)
-% for o = 1:length(TIT)
-
+%% Dry Trends
 % ST & TSFC vs HPCPR & TIT
 figure('Name','Dry ST + TSFC vs HPCR & TIT @ Various M','Position',[0,0,800,600])
 tiledlayout(2,2,'TileSpacing','compact')
@@ -1172,11 +982,7 @@ title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
 legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
 
 
-
-
-
 %% Wet Trends
-
 % ST & TSFC vs HPCPR & TIT
 figure('Name','Wet ST + TSFC vs HPCR & TIT @ Various M','Position',[0,0,800,600])
 tiledlayout(2,2,'TileSpacing','compact')
