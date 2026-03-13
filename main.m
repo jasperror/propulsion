@@ -3,32 +3,27 @@
 % Jasper Palmer & Jackson Gilbert
 
 clear; close all; clc;
-
-
-% Meeting Todos
-% Run a bunch of CEA simulations
-% What to do about afterburning condition -> Another burner
-
+tic
 %% Constants
 
 % Design-point Operating Conditions
-dmdt_a = 150; % Total air mass flow rate, kg/s
-pr = 28; % Overall pressure ratio, []
-T_5 = 2000; % TIT, K
-BPR = 0.57; % Bypass ratio, []
+% dmdt_a = 150; % Total air mass flow rate, kg/s
+% pr = 28; % Overall pressure ratio, []
+% T_5 = 2000; % TIT, K
+% BPR = 0.57; % Bypass ratio, []
 FAN_pr = 1.75; % Fan pressure ratio, []
-LPC_pr = 1.25; % LPC pressure ratio, []
-HPC_pr = 12.8; % HPC pressure ratio, []
+% LPC_pr = 1.25; % LPC pressure ratio, []
+% HPC_pr = 12.8; % HPC pressure ratio, []
 LHV = 43150; % Fuel heating value, kJ/kg
-T_a = 288.15; % Design point ambient temperature, K
-p_a = 101.325e3; % Ambient pressure, Pa
+% T_a = 288.15; % Design point ambient temperature, K
+% p_a = 101.325e3; % Ambient pressure, Pa
 
 % Flow & Geometric Assumptions
-M_1 = 0.5; % Fan inlet mach number, []
-Vbar_45 = 150; % Combustor average axial velocity, m/s
+% M_1 = 0.5; % Fan inlet mach number, []
+% Vbar_45 = 150; % Combustor average axial velocity, m/s
 d_9 = 0.78; % Nozzle throat diameter, m
 d_10 = 0.78; % Nozzle exit diameter, m
-M_7 = 0.5; % Turbine exit mach number, []
+% M_7 = 0.5; % Turbine exit mach number, []
 
 % Component Efficiencies
 eta.FAN = 0.89; % Fan efficiency, []
@@ -38,6 +33,7 @@ eta.BRN = 0.99; % Burner efficiency, []
 eta.HPT = 0.89; % HPT efficiency, []
 eta.LPT = 0.91; % LPT efficiency, []
 eta.NOZ = 0.98; % Nozzle efficiency, []
+eta.NOZWET = 0.97; % Nozzle efficiency with afterburner, []
 eta.SFT = 0.99; % Shaft efficiency, []
 
 % Stagnation Pressure Ratios
@@ -52,392 +48,501 @@ spr.ABRON = 0.95; % Afterburner operational SPR, []
 spr.NOZ = 0.98; % Nozzle SPR, []
 
 %% Engine Components
-function val = cp_call(prop, n1, v1, n2, v2)
-    val = py.CoolProp.CoolProp.PropsSI(prop, n1, v1, n2, v2, 'Air');
-end
-function pst(label, st, mdot)
-    fprintf('%-22s  %8.1f   %8.2f   %9.3f\n', label, st.T0, st.p0/1e3, mdot);
-end
-CP = @(prop,name1,val1,name2,val2)py.CoolProp.CoolProp.PropsSI(prop,name1,val1,name2,val2,'Air');
 
-function out = diffuser(in, spr_v, Ar, R)
-
-    out.p0 = in.p0*spr_v;  out.T0 = in.T0;  out.dmdt = in.dmdt;
-    T = in.T;  p = in.p;
-    for k = 1:10000
-        cp  = cp_call('CPMASS','T',T,'P',p);
-        cv  = cp_call('CVMASS','T',T,'P',p);
-        gam = cp/cv;
-        rho = cp_call('D','T',T,'P',p);
-        V   = in.V * in.rho / (rho * Ar);
-        M   = V / sqrt(gam*R*T);
-        pn  = out.p0*(1+(gam-1)/2*M^2)^(gam/(1-gam));
-        Tn  = out.T0/(1+(gam-1)/2*M^2);
-        err = sqrt(((Tn-T)/Tn)^2 + ((pn-p)/pn)^2);
-        T = Tn;  p = pn;
-        if err < 1e-7, break; end
-    end
-    out.T     = T;  out.p = p;
-    out.rho   = cp_call('D','T',T,'P',p);
-    cp = cp_call('CPMASS','T',T,'P',p);
-    cv = cp_call('CVMASS','T',T,'P',p);
-    out.gamma = cp/cv;
-    out.V     = in.V * in.rho / (out.rho * Ar);
-    out.M     = out.V / sqrt(out.gamma*R*T);
-    out.h     = cp_call('H','T',T,'P',p);
-    out.h0    = out.h + out.V^2/2;
-end
-
-function out = comp(in, pr, eta_c, Ar, R)
-    out.p = in.p*pr;  out.dmdt = in.dmdt;
-    h1    = cp_call('H','T',in.T,'P',in.p);
-    h01   = h1 + in.V^2/2;
-    s1    = cp_call('S','T',in.T,'P',in.p);
-    T2    = in.T;
-    for k = 1:10000
-        rho  = cp_call('D','T',T2,'P',out.p);
-        V2   = in.V * in.rho / (rho * Ar);
-        h2s  = cp_call('H','P',out.p,'S',s1);
-        h02s = h2s + V2^2/2;
-        h02  = h01 + (h02s - h01)/eta_c;
-        h2   = h02 - V2^2/2;
-        T2n  = cp_call('T','H',h2,'P',out.p);
-        err  = abs((T2n-T2)/T2n);
-        T2   = T2n;
-        if err < 1e-7, break; end
-    end
-    out.T  = T2;
-    cp = cp_call('CPMASS','T',T2,'P',out.p);
-    cv = cp_call('CVMASS','T',T2,'P',out.p);
-    out.gamma = cp/cv;
-    out.rho   = cp_call('D','T',T2,'P',out.p);
-    out.V     = in.V * in.rho / (out.rho * Ar);
-    out.h     = h2;
-    out.h0    = h02;
-    out.M     = out.V / sqrt(out.gamma*R*T2);
-    out.p0    = out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
-    out.T0    = T2*(1+(out.gamma-1)/2*out.M^2);
-    out.w     = h02 - h01;  
-end
-
-function out = turb(in, w_req, eta_t, Ar, R)
+function out = diffuser(in, spr, Ar, R) % Assuming adiabatic
+    out.p0 = in.p0 * spr;
     out.dmdt = in.dmdt;
-    h1   = cp_call('H','T',in.T,'P',in.p);
-    h01  = h1 + in.V^2/2;
-    s1   = cp_call('S','T',in.T,'P',in.p);
-    h02  = h01 - w_req;
-    h02s = h01 - w_req/eta_t;
+    out.T0 = in.T0;
 
-    T2 = in.T;  p2 = in.p;
-    for k = 1:10000
-        rho2  = cp_call('D','T',T2,'P',p2);
-        V2    = in.V * in.rho / (rho2 * Ar);
-        h2s   = h02s - V2^2/2;
-        h2    = h02  - V2^2/2;
-        p2n   = cp_call('P','H',h2s,'S',s1);
-        T2n   = cp_call('T','H',h2,'P',p2n);
-        err   = sqrt(((p2n-p2)/p2n)^2 + ((T2n-T2)/T2n)^2);
-        p2 = p2n;  T2 = T2n;
-        if err < 1e-7, break; end
-    end
-    out.T  = T2;  out.p = p2;
-    cp = cp_call('CPMASS','T',T2,'P',p2);
-    cv = cp_call('CVMASS','T',T2,'P',p2);
-    out.gamma = cp/cv;
-    out.rho   = cp_call('D','T',T2,'P',p2);
-    out.V     = in.V * in.rho / (out.rho * Ar);
-    out.M     = out.V / sqrt(out.gamma*R*T2);
-    out.p0    = p2*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
-    out.T0    = T2*(1+(out.gamma-1)/2*out.M^2);
-    out.h     = h2;
-    out.h0    = h02;
-end
-
-function out = duct(in, spr_v, R)
-    out.p0 = in.p0*spr_v;  out.T0 = in.T0;  out.dmdt = in.dmdt;
-    T = in.T;  p = in.p;
-    for k = 1:10000
-        cp  = cp_call('CPMASS','T',T,'P',p);
-        cv  = cp_call('CVMASS','T',T,'P',p);
-        gam = cp/cv;
-        rho = cp_call('D','T',T,'P',p);
-        V   = in.V * in.rho / rho;          
-        M   = V / sqrt(gam*R*T);
-        pn  = out.p0*(1+(gam-1)/2*M^2)^(gam/(1-gam));
-        Tn  = out.T0/(1+(gam-1)/2*M^2);
-        err = sqrt(((Tn-T)/Tn)^2 + ((pn-p)/pn)^2);
-        T = Tn;  p = pn;
-        if err < 1e-7, break; end
-    end
-    out.T     = T;  out.p = p;
-    out.rho   = cp_call('D','T',T,'P',p);
-    cp = cp_call('CPMASS','T',T,'P',p);
-    cv = cp_call('CVMASS','T',T,'P',p);
-    out.gamma = cp/cv;
-    out.V     = in.V * in.rho / out.rho;
-    out.M     = out.V / sqrt(out.gamma*R*T);
-    out.h     = cp_call('H','T',T,'P',p);
-    out.h0    = out.h + out.V^2/2;
-end
-
-% %function out = CEARUN(p, T, CEA, Tv)
-%     % Import CEA data
-%     sz = size(CEA, [1, 3]);
-%     Tad = reshape(CEA(:,4,:),sz);
-%     c = reshape(CEA(:,7,:),sz);
-%     h_BNR = reshape(CEA(:,5,:),sz);
-%     gamma = reshape(CEA(:,6,:),sz);
-%     CO = reshape(CEA(:,8,:),sz);
-%     CO2 = reshape(CEA(:,9,:),sz);
-%     NO = reshape(CEA(:,10,:),sz);
-%     OF = reshape(CEA(1,2,:),[1, size(CEA,3)]);
-%     phi = reshape(CEA(1,1,:),[1, size(CEA,3)]);
-%     pv = CEA(:,3,1)';
-%     h_air = py.CoolProp.CoolProp.PropsSI('H','T',T,'P',p,'Air')/1000-py.CoolProp.CoolProp.PropsSI('H','T',298.15,'P',101325,'Air')/1000; % Air absolute enthalpy [kJ/kg]
-%     h_fuel = -284117/151.9; % Jet-A absolute enthalpy [kJ/kg]
-% 
-%     % Lookup Values
-%     if T < 200 % If outside of bounds then use min/max. There is probably a better way to do this
-%         out.OF = CEA(1,2,1);
-%         out.phi = CEA(1,1,1);
-%         h_reac = (h_air*OF + h_fuel)/(1+OF);
-%         if p*1e-5 < 0.1
-%             out.T = CEA(1,4,1);
-%             out.c = CEA(1, 7, 1);
-%             out.h = CEA(1, 5, 1);
-%             out.Q_R = out.h-h_reac;
-%             out.gamma = CEA(1,6,1);
-%             out.CO2e = 10*CEA(1,8,1)+CEA(1,9,1);
-%             out.NO = CEA(1,10,1);
-%         elseif p*1e-5 > 50
-%             out.T = CEA(end,4,1);
-%             out.c = CEA(end, 7, 1);
-%             out.h = CEA(end, 5, 1);
-%             out.Q_R = out.h-h_reac;
-%             out.gamma = CEA(end,6,1);
-%             out.CO2e = 10*CEA(end,8,1)+CEA(end,9,1);
-%             out.NO = CEA(end,10,1);
-%         else
-%             out.T = interp1(pv, CEA(:,4,1), p*1e-5);
-%             out.c = interp1(pv, CEA(:,7,1), p*1e-5);
-%             out.h = interp1(pv, CEA(:,5,1), p*1e-5);
-%             out.Q_R = out.h-h_reac;
-%             out.gamma = interp1(pv, CEA(:,6,1), p*1e-5);
-%             out.CO2e = 10*interp1(pv, CEA(:,8,1), p*1e-5)+interp1(pv, CEA(:,9,1), p*1e-5);
-%             out.NO = interp1(pv, CEA(:,10,1), p*1e-5);
-%         end
-%     elseif T > 2000
-%         out.OF = CEA(1,2,end);
-%         out.phi = CEA(1,1,end);
-%         h_reac = (h_air*OF + h_fuel)/(1+OF);
-%         if p*1e-5 < 0.1
-%             out.T = CEA(1,4,end);
-%             out.c = CEA(1, 7, end);
-%             out.h = CEA(1, 5, end);
-%             out.Q_R = out.h-h_reac;
-%             out.gamma = CEA(1,6,end);
-%             out.CO2e = 10*CEA(1,8,end)+CEA(1,9,end);
-%             out.NO = CEA(1,10,end);
-%         elseif p*1e-5 > 50
-%             out.T = CEA(end,4,end);
-%             out.c = CEA(end, 7, end);
-%             out.h = CEA(end, 5, end);
-%             out.Q_R = out.h-h_reac;
-%             out.gamma = CEA(end,6,end);
-%             out.CO2e = 10*CEA(end,8,end)+CEA(end,9,end);
-%             out.NO = CEA(end,10,end);
-%         else
-%             out.T = interp1(pv, CEA(:, 4, end), p*1e-5);
-%             out.c = interp1(pv, CEA(:, 7, end), p*1e-5);
-%             out.h = interp1(pv, CEA(:, 5, end), p*1e-5);
-%             out.Q_R = out.h-h_reac;
-%             out.gamma = interp1(pv, CEA(:,6,end), p*1e-5);
-%             out.CO2e = 10*interp1(pv, CEA(:,8,end), p*1e-5)+interp1(pv, CEA(:,9,end), p*1e-5);
-%             out.NO = interp1(pv, CEA(:,10,end), p*1e-5);
-%         end
-%     else
-%         out.OF = interp1(Tv, OF, T);
-%         out.phi = interp1(Tv, phi, T);
-%         h_reac = (h_air*OF + h_fuel)/(1+OF);
-%         if p*1e-5 < 0.1
-%             out.T = interp1(Tv, CEA(1,4,:), T);
-%             out.c = interp1(Tv, CEA(1,7,:), T);
-%             out.h = interp1(Tv, CEA(1,5,:), T);
-%             out.Q_R = out.h-h_reac;
-%             out.gamma = interp1(Tv, CEA(1,6,:), T);
-%             out.CO2e = 10*interp1(Tv, CEA(1,8,:), T)+interp1(Tv, CEA(1,9,:), T);
-%             out.NO = interp1(Tv, CEA(1,10,:), T);
-%         elseif p*1e-5 > 50
-%             out.T = interp1(Tv, CEA(end,4,:), T);
-%             out.c = interp1(Tv, CEA(end,7,:), T);
-%             out.h = interp1(Tv, CEA(end,5,:), T);
-%             out.Q_R = out.h-h_reac;
-%             out.gamma = interp1(Tv, CEA(end,6,:), T);
-%             out.CO2e = 10*interp1(Tv, CEA(end,8,:), T)+interp1(Tv, CEA(end,9,:), T);
-%             out.NO = interp1(Tv, CEA(end,10,:), T);
-%         else % If parameters are OK then interpolate values from CEA
-%             [X, Y] = meshgrid(Tv, pv);
-%             out.T = interp2(X, Y, Tad, T, p*1e-5);
-%             out.c = interp2(X, Y, c, T, p*1e-5);
-%             out.h = interp2(X, Y, h_BNR, T, p*1e-5);
-%             out.Q_R = out.h-h_reac;
-%             out.gamma = interp2(X, Y, gamma, T, p*1e-5);
-%             out.CO2e = 10*interp2(X, Y, CO, T, p*1e-5) + interp2(X, Y, CO2, T, p*1e-5);
-%             out.NO = interp2(X, Y, NO, T, p*1e-5);
-%         end
-%     end
-%     out.Q_R = -(py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',p,'Air')/1000-py.CoolProp.CoolProp.PropsSI('H','T',T,'P',p,'Air')/1000); % super scuffed not using the CEA (impove me!)
-% end
-
-function out = combustor(in, spr_v, LHV, eta_b, R)
-
-    TIT    = 2000;   % K
-    out    = in;
-    out.p0 = spr_v * in.p0;
-    out.T0 = TIT;
-
-    h04 = in.h0;
-    h05 = cp_call('H','T',TIT,'P',out.p0) + in.V^2/2;
-
-    out.dmdt_f = in.dmdt * (h05 - h04) / (eta_b * LHV * 1000);
-    out.dmdt   = in.dmdt + out.dmdt_f;
-    out.V      = in.V;
-    out.h0     = h05;
-    out.Q_R    = LHV;  % kJ/kg_fuel, stored for reference
-
-    cp = cp_call('CPMASS','T',TIT,'P',out.p0);
-    cv = cp_call('CVMASS','T',TIT,'P',out.p0);
-    out.gamma = cp/cv;
-    out.M     = out.V / sqrt(out.gamma*R*TIT);
-    out.T     = TIT / (1+(out.gamma-1)/2*out.M^2);
-    out.p     = out.p0*(1+(out.gamma-1)/2*out.M^2)^(-out.gamma/(out.gamma-1));
-    out.rho   = cp_call('D','T',out.T,'P',out.p);
-    out.h     = cp_call('H','T',out.T,'P',out.p);
-end
-
-
-function out = mix(core, byp, spr_v, R)
-    out.dmdt = core.dmdt + byp.dmdt;
-    out.h0   = (core.dmdt*core.h0 + byp.dmdt*byp.h0) / out.dmdt;
-    out.p    = (core.p + byp.p) / 2;
-    out.V    = (core.dmdt*core.V + byp.dmdt*byp.V) / out.dmdt;
-
-    h = out.h0 - out.V^2/2;
-    T = (core.T + byp.T) / 2;
-    for k = 1:100
-        h_k  = cp_call('H','T',T,'P',out.p);
-        cp_k = cp_call('CPMASS','T',T,'P',out.p);
-        dT   = (h - h_k) / cp_k;
-        T    = T + dT;
-        if abs(dT) < 0.005, break; end
-    end
-    out.T   = T;
-    out.rho = cp_call('D','T',T,'P',out.p);
-    cp = cp_call('CPMASS','T',T,'P',out.p);
-    cv = cp_call('CVMASS','T',T,'P',out.p);
-    out.gamma = cp/cv;
-    out.M     = out.V / sqrt(out.gamma*R*T);
-    out.T0    = T*(1+(out.gamma-1)/2*out.M^2);
-    out.p0    = spr_v*out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
-    out.h     = h;
-end
-
-function out = afterburner_inop(in, spr_v, R)
-    out        = duct(in, spr_v, R);
-    out.dmdt_f = 0;
-end
-
-%% ---- AFTERBURNER (on) ---------------------------------------------------
-function out = afterburner_op(in, spr_v, LHV, eta_b, R)
-    T09    = 2450;   % K
-    out    = in;
-    out.p0 = spr_v * in.p0;
-
-    h08 = in.h0;
-    h09 = cp_call('H','T',T09,'P',out.p0) + in.V^2/2;
-
-    out.dmdt_f = in.dmdt * (h09 - h08) / (eta_b * LHV * 1000);
-    out.dmdt   = in.dmdt + out.dmdt_f;
-    out.T0     = T09;
-    out.h0     = h09;
-    out.V      = in.V;
-
-    cp = cp_call('CPMASS','T',T09,'P',out.p0);
-    cv = cp_call('CVMASS','T',T09,'P',out.p0);
-    out.gamma = cp/cv;
-    out.M     = out.V / sqrt(out.gamma*R*T09);
-    out.T     = T09 / (1+(out.gamma-1)/2*out.M^2);
-    out.p     = out.p0*(1+(out.gamma-1)/2*out.M^2)^(-out.gamma/(out.gamma-1));
-    out.rho   = cp_call('D','T',out.T,'P',out.p);
-    out.h     = cp_call('H','T',out.T,'P',out.p);
-end
-
-%% ---- NOZZLE -------------------------------------------------------------
-function out = nozzle(in, eta_n, A, R, p_amb)
-
-    out   = in;
-    mdot  = in.dmdt;
-    h1    = cp_call('H','T',in.T,'P',in.p);
-    h01   = h1 + in.V^2/2;
-    gam   = in.gamma;
-    choke = ((gam+1)/2)^(gam/(gam-1));
-
-    if in.p0/p_amb >= choke
-        %--- Choked ---
-        out.M = 1;
-        out.T = in.T0 / (1+(gam-1)/2);
-        out.p = in.p0 * (2/(gam+1))^(gam/(gam-1));
-        cp = cp_call('CPMASS','T',out.T,'P',out.p);
-        cv = cp_call('CVMASS','T',out.T,'P',out.p);
+    i = 0; err = 1; tmp = in.T; tmpp = in.p;
+    while err > 0.001 && i < 1e4
+        i = i+1;
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
+        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
         out.gamma = cp/cv;
-        a     = sqrt(out.gamma*R*out.T);
-        out.V = a;
-        out.rho = cp_call('D','T',out.T,'P',out.p);
-       
-        out.h  = cp_call('H','T',out.T,'P',out.p);
-        out.h0 = out.h + a^2/2;
-    else
-        %--- Unchoked ---
-        out.p = p_amb;
-        Tg    = in.T * 0.9;
-        for k = 1:1000
-            rho  = cp_call('D','T',Tg,'P',out.p);
-            V    = mdot / (rho*A);
-            h2   = h01 - eta_n*V^2/2;
-            Tnew = cp_call('T','H',h2,'P',out.p);
-            err  = abs((Tnew-Tg)/Tnew);
-            Tg   = Tnew;
-            if err < 1e-8, break; end
-        end
-        out.T   = Tnew;  out.V = V;
-        out.rho = cp_call('D','T',Tnew,'P',out.p);
-        cp = cp_call('CPMASS','T',Tnew,'P',out.p);
-        cv = cp_call('CVMASS','T',Tnew,'P',out.p);
-        out.gamma = cp/cv;
-        out.M     = V / sqrt(out.gamma*R*Tnew);
-        out.h     = h2;
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',tmpp,'Air');
+        out.V = in.rho/out.rho*Ar*in.V;
+        out.M = out.V/sqrt(out.gamma*R*tmp);
+        out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
+        out.T = in.T0/(1+(out.gamma-1)/2*out.M^2);
+        err = sqrt(mean( ((out.T-tmp)/out.T)^2+((out.p-tmpp)/out.p)^2 ));
+        tmp = out.T;
+        tmpp = out.p;
+    end 
+    out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+end
+
+function out = comp(in, pr, eta, Ar, R)
+    out.p = in.p*pr;
+    out.dmdt = in.dmdt;
+    h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
+    h01 = h1 + in.V^2/2;
+    s1 = py.CoolProp.CoolProp.PropsSI('S','T',in.T,'P',in.p,'Air');
+    
+    tmp = in.T; i = 0; err = 1;
+    while err > 0.001 && i < 1e4
+        i = i + 1;
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',out.p,'Air');
+        out.V = in.rho/out.rho*Ar*in.V;
+        h2s = py.CoolProp.CoolProp.PropsSI('H','P',out.p,'S',s1,'Air');
+        h02s = h2s + out.V^2/2;
+        h02 = (h02s-h01)/eta+h01;
+        h2 = h02 - out.V^2/2;
+        out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.p,'Air');
+        err = abs((out.T-tmp)/out.T);
+        tmp = out.T;
     end
+    
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',out.T,'P',out.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',out.T,'P',out.p,'Air');
+    out.gamma = cp/cv;
+    out.h = h2;
+    out.h0 = h02;
+    out.M = out.V/sqrt(out.gamma*R*out.T);
+    if out.M > 1
+        warning('Mach>1 in compressor stage!')
+    end
+    %out.p0 = out.p*(1+(out.gamma-1)/2*out.M^2)^((out.gamma-1)/(out.gamma));
+    out.p0 = in.p0 * pr;
+    out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+    % out.w = h2-h1+0.5*(out.V^2-in.V^2);
+    out.w = cp*(out.T0 - in.T0);
+end
+
+function out = turb(in, w_req, eta, Ar, R)
+    out.dmdt = in.dmdt;
+    if in.T > 2000
+        in.T = 2000;
+    end
+    h1 = py.CoolProp.CoolProp.PropsSI('H','T',in.T,'P',in.p,'Air');
+    h01 = h1 + in.V^2/2;
+    s1 = py.CoolProp.CoolProp.PropsSI('S','T',in.T,'P',in.p,'Air');
+    h02 = h01-w_req;
+    h02s = h01-(h01-h02)/eta;
+    
+    tmp = in.T; tmpp = in.p; i = 0; err = 1;
+    while err > 0.001 && i < 1e4
+        i = i + 1;
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',tmpp,'Air');
+        out.V = in.rho/out.rho*Ar*in.V;
+        h2s = h02s-out.V^2/2;
+        h2 = h02-out.V^2/2;
+        out.p = py.CoolProp.CoolProp.PropsSI('P','H',h2s,'S',s1,'Air');
+        out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',tmpp,'Air');
+        err = sqrt(mean( ((out.p-tmpp)/out.p)^2+((out.T-tmp)/out.T)^2 ));
+        tmp = out.T;
+        tmpp = out.p;
+    end
+
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',out.T,'P',out.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',out.T,'P',out.p,'Air');
+    out.gamma = cp/cv;
+    out.M = out.V/sqrt(out.gamma*R*out.T);
     out.p0 = out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
     out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+    out.h = h2;
+    out.h0 = h02;
 end
 
-    % i = 0; err = 1; tmp.T = in.T0; tmp.M = 0.5;
-    % disp(['p0=',num2str(out.p0*1e-5),', T0=',num2str(out.T0)])
+function out = duct(in, spr, R)
+    out.dmdt = in.dmdt;
+    out.p0   = in.p0 * spr;
+    out.T0   = in.T0;
+
+    % Use inlet Mach - constant area duct, M changes negligibly with small spr
+    M_in = in.M;
+
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',in.T,'P',in.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',in.T,'P',in.p,'Air');
+    out.gamma = cp/cv;
+
+    out.T   = out.T0 / (1 + (out.gamma-1)/2 * M_in^2);
+    out.p   = out.p0 * (1 + (out.gamma-1)/2 * M_in^2)^(-out.gamma/(out.gamma-1));
+    out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',out.p,'Air');
+    out.V   = M_in * sqrt(out.gamma * R * out.T);
+    out.M   = M_in;
+    out.h   = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+    out.h0  = out.h + out.V^2/2;
+
+
+    % out.dmdt = in.dmdt;
+    % out.p0 = in.p0 * spr;
+    % out.T0 = in.T0;
+    % tmp = in.T; tmpp = in.p; i = 0; err = 1;
     % while err > 0.001 && i < 1e4
-    %     i = i+1;
-    %     disp(['i=',num2str(i),', T=',num2str(tmp),', p=',num2str(p)])
-    %     [~, ~, ~, gamma] = air_props(tmp.T);
-    %     out.p = out.p0*(1+(gamma-1)/2*tmp.M^2)^(-gamma/(gamma-1));
-    %     out.u = sqrt(2*eta*gamma/(gamma-1)*R*in.T0*(1-(p/in.p0)^((gamma-1)/gamma)));
-    %     M = out.u/sqrt(gamma*R*tmp.T);
-    %     T = in.T0/(1+(gamma-1)/2*M^2);
-    %     err = sqrt(mean( ((T-tmp.T)/T)^2+((M-tmp.M)/M)^2 ));
-    %     tmp.T = T;
-    %     tmp.M = M;
+    %     i = i + 1;
+    % 
+    %     cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
+    %     cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
+    %     out.gamma = cp/cv;
+    %     out.rho = py.CoolProp.CoolProp.PropsSI('D','T',tmp,'P',tmpp,'Air');
+    %     out.V = in.rho/out.rho*in.V; % Assuming no change in cross-section area
+    %     out.M = out.V/sqrt(out.gamma*R*tmp); % out.V instead of in.V
+    %     out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
+    %     out.T = out.T0/(1+(out.gamma-1)/2*out.M^2);
+    %     err = sqrt(mean( ((out.T-tmp)/out.T)^2+((out.p-tmpp)/out.p)^2 ));
+    %     disp(['i=',num2str(i),' p=',num2str(out.p),' T=',num2str(out.T)])
+    % 
+    %     tmp = out.T;
+    %     tmpp = out.p;
     % end
+    % out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+    % out.h0 = out.h + out.V^2/2;
+end
+
+function out = CEARUN(p, T, CEA, Tv)
+    % Import CEA data
+    sz = size(CEA, [1, 3]);
+    Tad = reshape(CEA(:,4,:),sz);
+    c = reshape(CEA(:,7,:),sz);
+    h_BNR = reshape(CEA(:,5,:),sz);
+    gamma = reshape(CEA(:,6,:),sz);
+    CO = reshape(CEA(:,8,:),sz);
+    CO2 = reshape(CEA(:,9,:),sz);
+    NO = reshape(CEA(:,10,:),sz);
+    OF = reshape(CEA(1,2,:),[1, size(CEA,3)]);
+    phi = reshape(CEA(1,1,:),[1, size(CEA,3)]);
+    pv = CEA(:,3,1)';
+    h_air = py.CoolProp.CoolProp.PropsSI('H','T',T,'P',p,'Air')/1000-py.CoolProp.CoolProp.PropsSI('H','T',298.15,'P',101325,'Air')/1000; % Air absolute enthalpy [kJ/kg]
+    h_fuel = -284117/151.9; % Jet-A absolute enthalpy [kJ/kg]
+
+    % Lookup Values
+    if T < 200 % If outside of bounds then use min/max. There is probably a better way to do this
+        out.OF = CEA(1,2,1);
+        out.phi = CEA(1,1,1);
+        h_reac = (h_air*OF + h_fuel)/(1+OF);
+        if p*1e-5 < 0.1
+            out.T = CEA(1,4,1);
+            out.c = CEA(1, 7, 1);
+            out.h = CEA(1, 5, 1);
+            out.Q_R = out.h-h_reac;
+            out.gamma = CEA(1,6,1);
+            out.CO2e = 10*CEA(1,8,1)+CEA(1,9,1);
+            out.NO = CEA(1,10,1);
+        elseif p*1e-5 > 50
+            out.T = CEA(end,4,1);
+            out.c = CEA(end, 7, 1);
+            out.h = CEA(end, 5, 1);
+            out.Q_R = out.h-h_reac;
+            out.gamma = CEA(end,6,1);
+            out.CO2e = 10*CEA(end,8,1)+CEA(end,9,1);
+            out.NO = CEA(end,10,1);
+        else
+            out.T = interp1(pv, CEA(:,4,1), p*1e-5);
+            out.c = interp1(pv, CEA(:,7,1), p*1e-5);
+            out.h = interp1(pv, CEA(:,5,1), p*1e-5);
+            out.Q_R = out.h-h_reac;
+            out.gamma = interp1(pv, CEA(:,6,1), p*1e-5);
+            out.CO2e = 10*interp1(pv, CEA(:,8,1), p*1e-5)+interp1(pv, CEA(:,9,1), p*1e-5);
+            out.NO = interp1(pv, CEA(:,10,1), p*1e-5);
+        end
+    elseif T > 2000
+        out.OF = CEA(1,2,end);
+        out.phi = CEA(1,1,end);
+        h_reac = (h_air*OF + h_fuel)/(1+OF);
+        if p*1e-5 < 0.1
+            out.T = CEA(1,4,end);
+            out.c = CEA(1, 7, end);
+            out.h = CEA(1, 5, end);
+            out.Q_R = out.h-h_reac;
+            out.gamma = CEA(1,6,end);
+            out.CO2e = 10*CEA(1,8,end)+CEA(1,9,end);
+            out.NO = CEA(1,10,end);
+        elseif p*1e-5 > 50
+            out.T = CEA(end,4,end);
+            out.c = CEA(end, 7, end);
+            out.h = CEA(end, 5, end);
+            out.Q_R = out.h-h_reac;
+            out.gamma = CEA(end,6,end);
+            out.CO2e = 10*CEA(end,8,end)+CEA(end,9,end);
+            out.NO = CEA(end,10,end);
+        else
+            out.T = interp1(pv, CEA(:, 4, end), p*1e-5);
+            out.c = interp1(pv, CEA(:, 7, end), p*1e-5);
+            out.h = interp1(pv, CEA(:, 5, end), p*1e-5);
+            out.Q_R = out.h-h_reac;
+            out.gamma = interp1(pv, CEA(:,6,end), p*1e-5);
+            out.CO2e = 10*interp1(pv, CEA(:,8,end), p*1e-5)+interp1(pv, CEA(:,9,end), p*1e-5);
+            out.NO = interp1(pv, CEA(:,10,end), p*1e-5);
+        end
+    else
+        out.OF = interp1(Tv, OF, T);
+        out.phi = interp1(Tv, phi, T);
+        h_reac = (h_air*OF + h_fuel)/(1+OF);
+        if p*1e-5 < 0.1
+            size(Tv)
+            size(CEA(1,4,:))
+            out.T = interp1(Tv, reshape(CEA(1,4,:), [1, size(CEA,3)]), T);
+            out.c = interp1(Tv, reshape(CEA(1,7,:), [1, size(CEA,3)]), T);
+            out.h = interp1(Tv, reshape(CEA(1,5,:), [1, size(CEA,3)]), T);
+            out.Q_R = out.h-h_reac;
+            out.gamma = interp1(Tv, reshape(CEA(1,6,:), [1, size(CEA,3)]), T);
+            out.CO2e = 10*interp1(Tv, reshape(CEA(1,8,:), [1, size(CEA,3)]), T)+interp1(Tv, reshape(CEA(1,9,:), [1, size(CEA,3)]), T);
+            out.NO = interp1(Tv, reshape(CEA(1,10,:), [1, size(CEA,3)]), T);
+        elseif p*1e-5 > 50
+            out.T = interp1(Tv, reshape(CEA(end,4,:), [1, size(CEA,3)]), T);
+            out.c = interp1(Tv, reshape(CEA(end,7,:), [1, size(CEA,3)]), T);
+            out.h = interp1(Tv, reshape(CEA(end,5,:), [1, size(CEA,3)]), T);
+            out.Q_R = out.h-h_reac;
+            out.gamma = interp1(Tv, reshape(CEA(end,6,:), [1, size(CEA,3)]), T);
+            out.CO2e = 10*interp1(Tv, reshape(CEA(end,8,:), [1, size(CEA,3)]), T)+interp1(Tv, reshape(CEA(end,9,:), [1, size(CEA,3)]), T);
+            out.NO = interp1(Tv, reshape(CEA(end,10,:), [1, size(CEA,3)]), T);
+        else % If parameters are OK then interpolate values from CEA
+            [X, Y] = meshgrid(Tv, pv);
+            out.T = interp2(X, Y, Tad, T, p*1e-5);
+            out.c = interp2(X, Y, c, T, p*1e-5);
+            out.h = interp2(X, Y, h_BNR, T, p*1e-5);
+            out.Q_R = out.h-h_reac;
+            out.gamma = interp2(X, Y, gamma, T, p*1e-5);
+            out.CO2e = 10*interp2(X, Y, CO, T, p*1e-5) + interp2(X, Y, CO2, T, p*1e-5);
+            out.NO = interp2(X, Y, NO, T, p*1e-5);
+        end
+    end
+    out.Q_R = -(py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',p,'Air')/1000-py.CoolProp.CoolProp.PropsSI('H','T',T,'P',p,'Air')/1000); % super scuffed not using the CEA (impove me!)
+end
+
+function out = combustor(in, spr, LHV, eta, R, Tad)
+    i = 0; err = 1; tmp = in.T0; tmpp = in.p0;
+    while err > 0.001 && i < 1e4
+        % disp(['i=',num2str(i),', T=',num2str(tmp)])
+        i = i+1;
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',tmp,'P',tmpp,'Air');
+        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',tmp,'P',tmpp,'Air');
+        gamma = cp/cv;
+        M = in.V/sqrt(gamma*R*tmp);
+        T = in.T0/(1+(gamma-1)/2*M^2);
+        p = in.p0*(1+(gamma-1)/2*M^2)^(-gamma/(gamma-1));
+        err = sqrt(mean( ((T-tmp)/T)^2+((p-tmpp)/p)^2 ));
+        tmp = T;
+        tmpp = p;
+    end
+    
+    CEA = load('CEA.mat');
+    switch Tad
+        case 1750
+            CEA = CEA.COMB175;
+            Tv = [200, 800, 1000, 1500];
+        case 2000
+            CEA = CEA.COMB;
+            Tv = [200, 500, 700, 800, 900, 1000, 2000];
+        case 2250
+            CEA = CEA.COMB225;
+            Tv = [200, 800, 1000, 1500];
+    end
+    out = CEARUN(p, T, CEA, Tv);
+    out.p = p;
+    out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+    out.p0 = spr*in.p0;
+    out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',out.p,'Air');
+
+    % Calculate resulting parameters
+    out.V = in.V;
+    out.M = out.V/out.c;
+    t0_star = in.T0*(1+out.gamma*out.M^2)^2/(2*(out.gamma+1)*out.M^2*(1+(out.gamma-1)/2*out.M^2));
+    out.T0 = t0_star*(in.T0/t0_star - 1000*out.Q_R/(out.gamma*R/(out.gamma-1)*t0_star));
+    out.dmdt_f = -in.dmdt*out.Q_R/LHV/eta;
+    out.dmdt = out.dmdt_f + in.dmdt;
+    out.h0 = out.h + out.V^2/2;
+
+    %{
+    ....................................................::-:::::::......:::::::
+    ....................................................::-:::::::......:::::::
+    ....................................................::-:::::::......:::::::
+    ....................................................::-:::.:::.......::::::
+    ....................................:-..::..........::-:::.:::.......::::::
+    .................................:===**+*+-=:::.....::-:.::::........::::.:
+    .........................::-=+*****#####%%%%##***:..::-::::::.......:::::.:
+    .......................:=+*##%####**#%##%#%%######**---:.::::.........:::..
+    .....................:*####%#%%%#######%#%#####*##*###*-::::........:.::...
+    .....................-**#####%%%#%#%#%##%%%%##%#########=:::..........::...
+    ...................=+*+#####%%%%%%@%%%%%%%%%##%%%%%%%%%%#+:...........::...
+    ..................==**#%%%#%%%%%%%%%%@%%%%%%%@%%%%%%%%%%#=:..........:::...
+    .................*+**##%%%%%%%%%%%%%%%%%%%%%%%%%%%%%@%%%%#=:.........:::..:
+    ...............+*#***###%%%%%%%%%%%%%%#%%%%%%%%%%%%%@%%%%##=::.:.....::...:
+    ..............:*######%%%%%%%%%%%##*++*+***#######%%@%%%%%*=:::::::::::...:
+    ..............-***#%%%%%%%%###***++=======++++++***#%%%%%%#+:.:::::::::...:
+    .............:=*#####%#%%##**++==============++++++**##%%#**-:.::::::::....
+    ............:-+#*#####%%%##*+================+++++++++*#%%%#+::............
+    ............:.-*#%##%%%%###*+===----------=====++++++++*#%*+-..............
+    .............:=*#%#%%%%%##*+=====---------==========++++#%+--:...::::::----
+    .............:=###%%%%%%%*====---===++++++========+++++++%%*=========-====-
+    ..............:###%%%%##+---=+**####%%%%%#**++++**#####**##*===============
+    :::----=======+#*#%###+-----+***+*****#####**+*##%%#*#####*================
+    ===============*#%##*+------++*#*##########*++*##*####****++=+==+==========
+    ===============*++++=-:-===+*****##%#+*#####+=*%##%%%%#***=:++=============
+    ===============**+=-------====++*****######*--=######*##**++===------------
+    ++++++++++++++=*====-=--------==++*******#+=---+###*****++++---------------
+    **************+++**-==---=========++++++*+==---=********+++=--:::::--------
+    **************+=+*=-=+=--====--==++++++*+==--====***++++++=-------====+++++
+    ***************===+-=++=-=======+++****+=-===+++++***+++==+=+++++**********
+    ***************=+==-++++====++++++++**+*+***+++++++**++++++*##########*####
+    ***************+-===+*++*+++++++******+*#%%%#**#%#****+++++*###############
+    ******+=========-==++********+****###%%%%%%%%%%%%%##***+++**###############
+    ******+=============+****###*****#%%%############%%%%*****#*###############
+    ++++***+++++++=====+****#######**###%%##############%#**##**##########*++=-
+    ++++*********++++++++#########%######****+*******##%%#####+*##*****+++==--:
+    ***************++***=*##%#%#%%%##%##******##******#%%#%%#*+***#****++++++++
+    ===+++++++***+++#%@%-+##%%%%%%%#%%%###*#%%%%%%%%###%%%%%#++******#########*
+    ----=+===+**+==*#%@%-=*#%%%%%%%%%%%%%%##%%%%%%%%%%%%%%%%+=+*#*#*###########
+    =---=++===+*+****%@%==+*#%%%%%%%%%%%%%%#%%%%%%%%%%%%%%%+==+******#########*
+    =---=++===+*#****#@*++=+*#%%%%%%%%%%%%%%%##%%%%%%%%%%%+====+**********####*
+    =---=++=-=+*####*#**++++***#%%%%%%%%%%%%%%%%%%%%%%%%#*+====++*********####*
+    ==--=++++***######%#**+++***###%%%%%%%%%%@%%%%@@%%%%%#*+===++**+******###**
+    ==--=+*#**#########%%#***+*****##%%%%%%%%%%%%@@%%#*@%%#####*++*******######
+    ++++*##############%%%#**********###%%%%%%%%%%%#**%%%%%##%%####******######
+    **#**#*############%%%%%#***********##########***#%%%%%%#%%%%%########****#
+    **++****##%########%%%%%%#*********************##%%%%%%%%#%%%%%##%%%#####**
+    #####***##########%%%%%%%%%#******************#%%@%%%%%%%%#%%%%%%##########
+    ##%%%%%############%%%%%%%%%#*#*************###%@%%%%%%%%%%#%%%%%########%%
+    ###%#%%%%%###%%%####%%%@@%%%%%%***********####%%@%%%%%%%%%%%%%########%%%%#
+    ###%%%%%%%%%%%##%@@@@@%%%%%%%%%%#***********#%%%%%%%%%%%@@@@%######%%%%%%##
+    %%####%%%%%%%%%%%%#%%%%%%%%%%%%%%%#**********#%%%%%%%%%%%%%%%####%%%%%%%%##
+    ########%%%%%%%%%%%%%%%%%%#%%%%%%%%%#********%%%%%%%%%%%%%%%%%%%%%%%%%%%##%
+    %%%########%%%%%%%%%%%%%%%@@@%%%%%%%%%%#*##%#%%%%%%%%%%%%%%%%%%%%%%%%######
+    %%%%%%%%######%%%%%%%%%%%%%%%@@@@@@%%%%%###%%%%%%%%%@@%%%%%%%%%%%%%%%####%%
+    %%%%%%%%%%%%%###%%%%%%%%%%%%%%%%%%%%%@@@%%##%%%%%%@@%%%%%%%%%%%%%%%%%%%%%%%
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%@@@@@%%%%@@@%%%%%%%%%%%%%%%%%%###%%#
+    Help! I am trapped inside a combustor! -Sepehr
+    %}
+
+end
+
+function out = mix(core, bypass, spr, R)
+    hb = py.CoolProp.CoolProp.PropsSI('H','T',bypass.T,'P',bypass.p,'Air');
+    hc = py.CoolProp.CoolProp.PropsSI('H','T',core.T,'P',core.p,'Air');
+    h0b = hb+bypass.V^2/2;
+    h0c = hc+core.V^2/2;
+    h02 = (bypass.dmdt*h0b+core.dmdt*h0c)/(bypass.dmdt+core.dmdt);
+
+    d = 1;
+    r = d/2;
+    AH = pi*(0.85*r)^2; % Assuming core outlet is 85% of radius of engine
+    A2 = pi*r^2;
+    AC = A2-AH;
+    out.dmdt = core.dmdt+bypass.dmdt;
+    
+    tmp=(core.rho+bypass.rho)/2; i=0; err=1;
+    while err > 0.001 && i < 1e4
+        i = i + 1;
+        out.V = (bypass.rho*AC*bypass.V+core.rho*AH*core.V)/(tmp*A2);
+        h2 = h02-out.V^2/2;
+        out.p = (out.dmdt*out.V-bypass.dmdt*bypass.V-core.dmdt*core.V+bypass.p*AC+core.p*AH)/A2;
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','P',out.p,'H',h2,'Air');
+        err = abs((out.rho-tmp)/out.rho);
+        tmp = out.rho;
+    end
+
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','H',h2,'P',out.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','H',h2,'P',out.p,'Air');
+    out.gamma = cp/cv;
+    out.T = py.CoolProp.CoolProp.PropsSI('T','H',h2,'P',out.p,'Air');
+    out.M = out.V/sqrt(out.gamma*R*out.T);
+    out.p0 = spr*out.p*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(out.gamma-1));
+    out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+    out.h = h2;
+   
+end
+
+function out = afterburner_inop(in, spr, R)
+    out = duct(in, spr, R);
+    out.dmdt_f = 0;
+    out.Q_R = 0;
+end
+
+function out = afterburner_op(in, spr, LHV)
+    CEA = load('CEA.mat');
+    out = CEARUN(in.p, in.T, CEA.ABR, [200, 500, 700, 900, 2000]);
+    out.p0 = in.p0*spr;
+    out.dmdt_f = -out.Q_R*in.dmdt/LHV;
+    out.dmdt = in.dmdt+out.dmdt_f;
+    i = 0; err = 1; tmp = out.p0;
+    while err > 0.001 && i < 1e4
+        i = i + 1;
+        out.rho = py.CoolProp.CoolProp.PropsSI('D','T',out.T,'P',tmp,'Air');
+        out.V = in.rho/out.rho*in.V;
+        out.M = out.V/out.c;
+        out.T0 = out.T*(1+(out.gamma-1)/2*out.M^2);
+        out.p = out.p0*(1+(out.gamma-1)/2*out.M^2)^(out.gamma/(1-out.gamma));
+        err = abs((out.p-tmp)/out.p);
+        tmp = out.p;
+    end
+    out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+    out.s = py.CoolProp.CoolProp.PropsSI('S','T',out.T,'P',out.p,'Air');
+
+
+end
+
+function out = nozzle(in, spr, eta, A_throat, A_exit, p_amb)
+    
+    p02 = in.p0 * spr;
+    cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',in.T,'P',in.p,'Air');
+    cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',in.T,'P',in.p,'Air');
+    gamma = cp/cv;
+
+    NPR_crit = ((gamma + 1)/2)^(gamma/(gamma - 1));
+    NPR = p02/p_amb;
+    Ar = A_exit/A_throat;
+
+    if Ar ~= 1
+        %afterburner operating -> flow is choked at throat
+
+        T0_n = 2450; % K -> given
+        p0_n = in.p0*spr; % different efficiency
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',T0_n,'P',in.p,'Air'); %static T = stagnation T here
+        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',T0_n,'P',in.p,'Air');
+        gamma = cp/cv;
+
+        fun = @(M_exit) (1/M_exit) * ((2/(gamma+1)) * (1 + (gamma-1)/2 * M_exit^2))^((gamma+1)/(2*(gamma-1))) - Ar;
+        M_exit = fzero(fun,[1.01, 10]);
+
+        T2s = T0_n / (1 + (gamma - 1) / 2 * M_exit^2);
+
+        out.T = T0_n - eta*(T0_n - T2s);
+        out.V = sqrt(2*cp*(T0_n - out.T)); 
+        out.p = p0_n/(1+(gamma-1)/2*M_exit^2)^(gamma/(gamma-1));
+        out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+        out.s = py.CoolProp.CoolProp.PropsSI('S','T',out.T,'P',out.p,'Air');
+        out.M = M_exit;
+    end
+
+    if NPR >= NPR_crit && Ar == 1
+        %flow is choked
+
+        T2s = (2*in.T0)/(gamma + 1);
+        out.T = in.T0 - eta*(in.T0 - T2s);
+        out.p = p02/NPR_crit;
+        % out.V = sqrt(2*cp*(in.T0 - T2s));
+        out.V = sqrt(2*cp*(in.T0 - out.T));  
+        out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+        out.s = py.CoolProp.CoolProp.PropsSI('S','T',out.T,'P',out.p,'Air');
+        out.M = 1;
+    elseif NPR <= NPR_crit && Ar == 1
+        %flow is unchoked
+        out.p = p_amb;
+        M_exit = sqrt(2/(gamma-1)*((NPR)^((gamma-1)/gamma)-1));
+        T2s = in.T0/(1+(gamma-1)/2*M_exit^2);
+        out.T = in.T0 - eta*(in.T0 - T2s);
+        out.V = sqrt(2*cp*(in.T0 - out.T));
+        cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',out.T,'P',out.p,'Air');
+        cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',out.T,'P',out.p,'Air');
+        out.gamma = cp/cv;
+        out.h = py.CoolProp.CoolProp.PropsSI('H','T',out.T,'P',out.p,'Air');
+        out.s = py.CoolProp.CoolProp.PropsSI('S','T',out.T,'P',out.p,'Air');
+    end
+end
+
+    
 
 
 
+
+   
+
+
+
+
+    
+  
 %% Engine Structure
 
 %{
@@ -477,133 +582,801 @@ assumptions are identical to those listed for dry operations.
 Fuel type: Jet-A/JP-8
 %}
 
+%{
 % Ambient Conditions
-ambient.T = 15 + 273.15;   % K
-ambient.p = 101.325e3;     % Pa
-ambient.dmdt = 150;           % kg/s total air
-ambient.M  = 0.5;
+ambient.T = 15+273.15;
+ambient.p = 101.325e3;
+ambient.dmdt = 150;
+ambient.rho = py.CoolProp.CoolProp.PropsSI('D','T',ambient.T,'P',ambient.p,'Air');
 R = 287;
-
-ambient.rho = CP('D','T',ambient.T,'P',ambient.p);
-cp_a = CP('CPMASS','T',ambient.T,'P',ambient.p);
-cv_a = CP('CVMASS','T',ambient.T,'P',ambient.p);
-ambient.gamma = cp_a / cv_a;
-ambient.V = ambient.M * sqrt(ambient.gamma * R * ambient.T);
-ambient.h = CP('H','T',ambient.T,'P',ambient.p);
+ambient.M = 0.5;
+cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',ambient.T,'P',ambient.p,'Air');
+cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',ambient.T,'P',ambient.p,'Air');
+ambient.h = py.CoolProp.CoolProp.PropsSI('H','T',ambient.T,'P',ambient.p,'Air');
+ambient.gamma = cp/cv;
+ambient.V = ambient.M*sqrt(ambient.gamma*R*ambient.T);
 ambient.h0 = ambient.h + ambient.V^2/2;
-ambient.p0 = ambient.p * (1+(ambient.gamma-1)/2*ambient.M^2)^(ambient.gamma/(ambient.gamma-1));
-ambient.T0 = ambient.T * (1+(ambient.gamma-1)/2*ambient.M^2);
-
-dmdt_aH = ambient.dmdt / (BPR+1);        % core mass flow, kg/s
-dmdt_aC = BPR * ambient.dmdt / (BPR+1);  % bypass mass flow, kg/s
+dmdt_aH = ambient.dmdt/(BPR+1);
+dmdt_aC = BPR*ambient.dmdt/(BPR+1);
+u = ambient.M*sqrt(ambient.gamma*R*ambient.T);
+ambient.p0 = ambient.p*(1+(ambient.gamma-1)/2*ambient.M^2)^(ambient.gamma/(ambient.gamma-1));
+ambient.T0 = ambient.T*(1+(ambient.gamma-1)/2*ambient.M^2);
 
 % Engine Calculations
 engine.diffuser = diffuser(ambient, spr.INT, 0.95, R);
-engine.fan      = comp(engine.diffuser, FAN_pr, eta.FAN, 1.02, R);
+engine.fan = comp(engine.diffuser, FAN_pr, eta.FAN, 1.02, R);
 
-% Fan exit split
-core        = engine.fan;  core.dmdt   = dmdt_aH;
-bypass      = engine.fan;  bypass.dmdt = dmdt_aC;
-core        = duct(core,   spr.LPC, R);
-bypass      = duct(bypass, spr.BPD, R);
+core = engine.fan;
+core.dmdt = dmdt_aH;
+core = duct(core, spr.LPC, R);
+bypass = engine.fan;
+bypass.dmdt = dmdt_aC;
+bypass = duct(bypass, spr.BPD, R);
 
-% Compressors
+
 engine.lpc = comp(core, LPC_pr, eta.LPC, 3, R);
 engine.lpc_ducted = duct(engine.lpc, spr.HPC, R);
-engine.hpc = comp(engine.lpc_ducted, HPC_pr, eta.HPC, 3, R);
-
-% Combustor (targets TIT = 2000 K)
-engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R);
-
-% HP shaft power balance
-w_HPT = engine.hpc.w * engine.lpc_ducted.dmdt / (eta.SFT * engine.combustor.dmdt);
-engine.hpt = turb(engine.combustor, w_HPT, eta.HPT, 0.35, R);
-
-% LP shaft power balance
-
-P_LP = engine.fan.w * ambient.dmdt + engine.lpc.w * dmdt_aH;
-w_LPT = P_LP / (eta.SFT * engine.hpt.dmdt);
-engine.lpt = turb(engine.hpt, w_LPT, eta.LPT, 0.7, R);
-
-% Mixer
+engine.hpc = comp(engine.lpc_ducted, HPC_pr, eta.HPC, 3, R); % Adjusted to get 150m/s in combustor in static conditions
+engine.combustor = combustor(engine.hpc, spr.BRN, LHV, eta.BRN, R, 2000);
+engine.hpt = turb(engine.combustor, engine.hpc.w/eta.SFT, eta.HPT, 0.35, R);
+engine.lpt = turb(engine.hpt, (engine.lpc.w*dmdt_aH+engine.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R);
 engine.mixer = mix(engine.lpt, bypass, spr.MXR, R);
 
-% Afterburner
 engine.afterburner = afterburner_inop(engine.mixer, spr.ABR, R);
 engine.afterburner.Q_R = 0;
-engine.afterburner_op = afterburner_op(engine.mixer, spr.ABRON, LHV, eta.BRN, R);
+engine.afterburner_op = afterburner_op(engine.mixer, spr.ABRON, LHV);
+engine.nozzle = nozzle(engine.afterburner, eta.NOZ, pi*(0.78/2)^2, R, ambient.p);
+engine.nozzle_op = nozzle(engine.afterburner_op, 0.97, pi*(0.92/2)^2, R, ambient.p);
 
-% Nozzles
-A_dry = pi * (d_9/2)^2;
-A_wet = pi * (0.92/2)^2;
+% Output Parameters
 
-engine.nozzle = nozzle(engine.afterburner, eta.NOZ, A_dry, R, ambient.p);
-engine.nozzle_op = nozzle(engine.afterburner_op, 0.97, A_wet, R, ambient.p);
+thrust = (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner.dmdt_f)*engine.nozzle.V-ambient.dmdt*ambient.V+pi*d_10^2/4*(engine.nozzle.p-ambient.p); % Thrust, N
+ST = thrust/ambient.dmdt; % Specific thrust, Ns/kg
+%TSFC = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/thrust; % Thrust-specific fuel consumption, kg/Ns
+mdot_total = ambient.dmdt + engine.combustor.dmdt_f + engine.afterburner.dmdt_f;
+mdot_f_total = engine.combustor.dmdt_f + engine.afterburner.dmdt_f;
 
-%output paramegters
-g = 9.81;
+f = (engine.combustor.dmdt_f+engine.afterburner.dmdt_f)/ambient.dmdt;
+eta_th = (mdot_total*(engine.nozzle.V^2/2 - ambient.V^2/2)/(mdot_f_total*LHV*1000));
+eta_p = thrust*ambient.V/ambient.dmdt/((1+f)*(engine.nozzle.V^2/2)-ambient.V^2/2); % Propulsion efficiency, []
+eta_0 = eta_th*eta_p; % Overall efficiency, []
 
-% Mass flows at nozzle exit
-mdot_e_dry = engine.afterburner.dmdt;
-mdot_e_wet = engine.afterburner_op.dmdt;
-mdot_f_dry = engine.combustor.dmdt_f;
-mdot_f_wet = engine.combustor.dmdt_f + engine.afterburner_op.dmdt_f;
+g=9.81;
+LD = 10; % Estimate of cruise lift to drag ratio, []
+s = -(eta_0*LD*engine.combustor.Q_R/g*log(1.66)); % Aircraft range (assuming fuel is 40% of aircraft weight), m
 
-% Thrust [N]
 thrust = [
-    mdot_e_dry * engine.nozzle.V    - ambient.dmdt*ambient.V + A_dry*(engine.nozzle.p    - ambient.p);
-    mdot_e_wet * engine.nozzle_op.V - ambient.dmdt*ambient.V + A_wet*(engine.nozzle_op.p - ambient.p)
-];
+    (ambient.dmdt+engine.combustor.dmdt_f)*engine.nozzle.V-ambient.dmdt*ambient.V+pi*d_10^2/4*(engine.nozzle.p-ambient.p);
+    (ambient.dmdt+engine.combustor.dmdt_f+engine.afterburner_op.dmdt_f)*engine.nozzle.V-ambient.dmdt*ambient.V+pi*1.15^2/4*(engine.nozzle.p-ambient.p);
+]; % Thrust, N
+ST = thrust./ambient.dmdt; % Specific thrust, Ns/kg
+TSFC = [engine.combustor.dmdt_f; (engine.combustor.dmdt_f+engine.afterburner_op.dmdt_f)]./thrust; % Thrust-specific fuel consumption, kg/Ns
 
-% Specific thrust [N/(kg/s)]
-ST = thrust ./ ambient.dmdt;
-
-% TSFC [kg/(N.s)]
-TSFC = [mdot_f_dry; mdot_f_wet] ./ thrust;
-
-% Change in kinetic energy rate [W]
 DKE = [
-    0.5*mdot_e_dry*engine.nozzle.V^2 - 0.5*ambient.dmdt*ambient.V^2;
-    0.5*mdot_e_wet*engine.nozzle_op.V^2 - 0.5*ambient.dmdt*ambient.V^2
+    (ambient.dmdt+engine.combustor.dmdt_f)*engine.nozzle.V^2/2-ambient.dmdt*ambient.V^2/2;
+    (ambient.dmdt+engine.afterburner_op.dmdt_f+engine.combustor.dmdt_f)*engine.nozzle_op.V^2/2-ambient.dmdt*ambient.V^2/2;
 ];
+eta_th = DKE./[-engine.combustor.dmdt_f*1e3*engine.combustor.Q_R; -engine.combustor.dmdt_f*1e3*engine.combustor.Q_R-engine.afterburner_op.dmdt_f*engine.afterburner_op.Q_R*1e3];
+eta_p = thrust.*ambient.V./DKE; % Propulsion efficiency, []
+eta_0 = eta_th.*eta_p; % Overall efficiency, []
+% eta_0 = thrust.*[engine.nozzle.V; engine.nozzle_op.V]./[-engine.combustor.dmdt_f*1e3*engine.combustor.Q_R; -engine.combustor.dmdt_f*1e3*engine.combustor.Q_R-engine.afterburner_op.dmdt_f*engine.afterburner_op.Q_R*1e3];
 
-% Thermal efficiency
-eta_th = DKE ./ ([mdot_f_dry; mdot_f_wet] * LHV * 1000);
+g=9.81;
+LD = 7; % Estimate of cruise lift to drag ratio, []
+s = -eta_0.*LD*engine.combustor.Q_R/g*log(1.66); % Aircraft range (assuming fuel is 40% of aircraft weight), km
+% s = LD*ambient.V/g/TSFC*log(1.66)/1000;
+table(thrust./1000, ST, TSFC, eta_th, eta_p, eta_0 , s,'VariableNames',{'Thrust [kN]','ST','TSFC','eta_th','eta_p','eta_0','s [km]'},'RowNames',{'No ABR','ABR'})
 
-% Propulsive efficiency
-eta_p = thrust .* ambient.V ./ DKE;
+%}
 
-% Overall efficiency
-eta_0 = eta_th .* eta_p;
 
-% Breguet range [km]
-LD = 7;
-s  = ambient.V/g ./ TSFC * LD * log(1.66) / 1000;
 
-% Station T0 / p0 summary
-fprintf('\n===== STATION SUMMARY ============================\n')
-fprintf('%-22s  %8s   %8s   %9s\n','Station','T0 [K]','p0 [kPa]','mdot [kg/s]')
-pst('Ambient',        ambient,              ambient.dmdt)
-pst('Fan exit',       engine.fan,           ambient.dmdt)
-pst('LPC exit',       engine.lpc,           dmdt_aH)
-pst('HPC exit',       engine.hpc,           dmdt_aH)
-pst('Combustor',      engine.combustor,     engine.combustor.dmdt)
-pst('HPT exit',       engine.hpt,           engine.hpt.dmdt)
-pst('LPT exit',       engine.lpt,           engine.lpt.dmdt)
-pst('Bypass duct',    bypass,               dmdt_aC)
-pst('Mixer exit',     engine.mixer,         engine.mixer.dmdt)
-pst('AB exit (dry)',  engine.afterburner,   engine.afterburner.dmdt)
-pst('AB exit (wet)',  engine.afterburner_op,engine.afterburner_op.dmdt)
-pst('Nozzle (dry)',   engine.nozzle,        mdot_e_dry)
-pst('Nozzle (wet)',   engine.nozzle_op,     mdot_e_wet)
 
-% Performance table
-fprintf('\n===== PERFORMANCE SUMMARY =======================\n')
-disp(table(thrust./1000, ST, TSFC, eta_th, eta_p, eta_0, s, ...
-    'VariableNames',{'Thrust_kN','ST','TSFC','eta_th','eta_p','eta_0','Range_km'}, ...
-    'RowNames',{'Dry','Wet_AB'}))
+R = 287;
+ISA = load('ISA.mat');
+ISA = ISA.ISA;
 
-fprintf('Fuel flow dry  : %.4f kg/s\n', mdot_f_dry)
-fprintf('Fuel flow wet  : %.4f kg/s\n', mdot_f_wet)
-fprintf('Nozzle V dry   : %.1f m/s   p = %.2f kPa\n', engine.nozzle.V,    engine.nozzle.p/1e3)
-fprintf('Nozzle V wet   : %.1f m/s   p = %.2f kPa\n', engine.nozzle_op.V, engine.nozzle_op.p/1e3)
+M=[0.1, 0.3, 0.5, 0.6];
+h = 0:5000:15000;
+ISADEV = -10:10:10;
+BPR = 0:0.5:1.5;
+HPCPR = 10:2:16;
+LPCPR = 1.2:0.5:2.2;
+TIT = 1750:250:2250;
+
+% M = 0.5;
+% h = 0;
+% ISADEV = 0;
+% BPR = 0.57;
+% HPCPR = 12.8;
+% LPCPR = 1.25;
+% TIT = 2000;
+
+N = length(M)*length(h)*length(ISADEV)*length(BPR)*length(HPCPR)*length(LPCPR)*length(TIT);
+count = 0;
+
+ST_d = zeros(length(M),length(h),length(ISADEV),length(BPR),length(HPCPR),length(LPCPR),length(TIT));
+ST_w = ST_d; TSFC_d = ST_d; TSFC_w = ST_d; eta_p_d = ST_d; eta_p_w = ST_d; eta_th_d = ST_d; eta_th_w = ST_d;
+eta_0_d = ST_d; eta_0_w = ST_d; dmdt_f_d = ST_d; dmdt_f_w = ST_d; s_d = ST_d; s_w = ST_d;
+thr_d = ST_d; thr_w = ST_d; nox_d = ST_d; nox_w = ST_d; co2e_d = ST_d; co2e_w = ST_d;
+
+for i = 1:length(M)
+    for j = 1:length(h)
+        for k = 1:length(ISADEV)
+            for l = 1:length(BPR)
+                for m = 1:length(HPCPR)
+                    for n = 1:length(LPCPR)
+                        for o = 1:length(TIT)
+% disp(['i=',num2str(i),' j=',num2str(j),' k=',num2str(k),' l=',num2str(l),' m=',num2str(m),' n=',num2str(n),' o=',num2str(o)])
+count = count+1;
+if mod(count,10)==0
+    clc; disp([num2str(round(count/N.*100,2)),'%']);
+end
+
+% Ambient Conditions
+ambient.T = interp1(ISA(:,1),ISA(:,2),h(j))+ISADEV(k);
+ambient.p = interp1(ISA(:,1),ISA(:,3),h(j))*1e5;
+ambient.rho = py.CoolProp.CoolProp.PropsSI('D','T',ambient.T,'P',ambient.p,'Air');
+ambient.M = M(i);
+cp = py.CoolProp.CoolProp.PropsSI('CPMASS','T',ambient.T,'P',ambient.p,'Air');
+cv = py.CoolProp.CoolProp.PropsSI('CVMASS','T',ambient.T,'P',ambient.p,'Air');
+ambient.h = py.CoolProp.CoolProp.PropsSI('H','T',ambient.T,'P',ambient.p,'Air');
+ambient.gamma = cp/cv;
+ambient.V = ambient.M*sqrt(ambient.gamma*R*ambient.T);
+ambient.h0 = ambient.h + ambient.V^2/2;
+ambient.p0 = ambient.p*(1+(ambient.gamma-1)/2*ambient.M^2)^(ambient.gamma/(ambient.gamma-1));
+ambient.T0 = ambient.T*(1+(ambient.gamma-1)/2*ambient.M^2);
+
+% Dry Engine Calculations
+ambient.dmdt = 150;
+dmdt_aH = ambient.dmdt/(BPR(l)+1);
+dmdt_aC = BPR(l)*ambient.dmdt/(BPR(l)+1);
+engine.dry.diffuser = diffuser(ambient, spr.INT, 0.95, R);
+engine.dry.fan = comp(engine.dry.diffuser, FAN_pr, eta.FAN, 1.02, R);
+dry.core = engine.dry.fan;
+dry.core.dmdt = dmdt_aH;
+dry.core = duct(dry.core, spr.LPC, R);
+dry.bypass = engine.dry.fan;
+dry.bypass.dmdt = dmdt_aC;
+dry.bypass = duct(dry.bypass, spr.BPD, R);
+engine.dry.lpc = comp(dry.core, LPCPR(n), eta.LPC, 3, R);
+engine.dry.lpc_ducted = duct(engine.dry.lpc, spr.HPC, R);
+engine.dry.hpc = comp(engine.dry.lpc_ducted, HPCPR(m), eta.HPC, 3, R); % Adjusted to get 150m/s in combustor in static conditions
+engine.dry.combustor = combustor(engine.dry.hpc, spr.BRN, LHV, eta.BRN, R, TIT(o));
+engine.dry.hpt = turb(engine.dry.combustor, engine.dry.hpc.w/eta.SFT, eta.HPT, 0.35, R);
+engine.dry.lpt = turb(engine.dry.hpt, (engine.dry.lpc.w*dmdt_aH+engine.dry.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R);
+engine.dry.mixer = mix(engine.dry.lpt, dry.bypass, spr.MXR, R);
+engine.dry.afterburner = afterburner_inop(engine.dry.mixer, spr.ABR, R);
+engine.dry.nozzle = nozzle(engine.dry.afterburner, spr.NOZ, eta.NOZ, pi*(0.78/2)^2, pi*(0.78/2)^2, ambient.p);
+
+% Wet Engine Calculations
+ambient.dmdt = 165;
+dmdt_aH = ambient.dmdt/(BPR(l)+1);
+dmdt_aC = BPR(l)*ambient.dmdt/(BPR(l)+1);
+engine.wet.diffuser = diffuser(ambient, spr.INT, 0.95, R);
+engine.wet.fan = comp(engine.wet.diffuser, FAN_pr, eta.FAN, 1.02, R);
+wet.core = engine.wet.fan;
+wet.core.dmdt = dmdt_aH;
+wet.core = duct(wet.core, spr.LPC, R);
+wet.bypass = engine.wet.fan;
+wet.bypass.dmdt = dmdt_aC;
+wet.bypass = duct(wet.bypass, spr.BPD, R);
+engine.wet.lpc = comp(wet.core, LPCPR(n), eta.LPC, 3, R);
+engine.wet.lpc_ducted = duct(engine.wet.lpc, spr.HPC, R);
+engine.wet.hpc = comp(engine.wet.lpc_ducted, HPCPR(m), eta.HPC, 3, R); % Adjusted to get 150m/s in combustor in static conditions
+engine.wet.combustor = combustor(engine.wet.hpc, spr.BRN, LHV, eta.BRN, R, TIT(o));
+engine.wet.hpt = turb(engine.wet.combustor, engine.wet.hpc.w/eta.SFT, eta.HPT, 0.35, R);
+engine.wet.lpt = turb(engine.wet.hpt, (engine.wet.lpc.w*dmdt_aH+engine.wet.fan.w*ambient.dmdt)/dmdt_aH/eta.SFT, eta.LPT, 0.7, R);
+engine.wet.mixer = mix(engine.wet.lpt, wet.bypass, spr.MXR, R);
+engine.wet.afterburner = afterburner_op(engine.wet.mixer, spr.ABRON, LHV);
+% throat: 0.92m, exit: 1.15m
+engine.wet.nozzle = nozzle(engine.wet.afterburner, spr.NOZ,eta.NOZWET, pi*(0.92/2)^2, pi*(1.15/2)^2, ambient.p);
+
+% Difference between thrust (dry and wet) and published values
+
+% T-s diagram
+% tv = [ambient.T, engine.dry.diffuser.T, engine.dry.fan.T, engine.dry.lpc.T, engine.dry.hpc.T, engine.dry.combustor.T, engine.dry.hpt.T, engine.dry.lpt.T, engine.dry.mixer.T, engine.dry.afterburner.T, engine.dry.nozzle.T];
+% hv = [ambient.h, engine.dry.diffuser.h, engine.dry.fan.h, engine.dry.lpc.h, engine.dry.hpc.h, engine.dry.combustor.h, engine.dry.hpt.h, engine.dry.lpt.h, engine.dry.mixer.h, engine.dry.afterburner.h, engine.dry.nozzle.h];
+% pv = [ambient.p, engine.dry.diffuser.p, engine.dry.fan.p, engine.dry.lpc.p, engine.dry.hpc.p, engine.dry.combustor.p, engine.dry.hpt.p, engine.dry.lpt.p, engine.dry.mixer.p, engine.dry.afterburner.p, engine.dry.nozzle.p];
+% sv = zeros(size(tv));
+% for ii = 1:length(tv)
+%     sv(ii) = py.CoolProp.CoolProp.PropsSI('S','T',tv(ii),'P',pv(ii),'Air');
+% end
+% % figure
+% % plot(svw,tvw,'r*-')
+% % hold on
+% % plot([svw(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), svw(9)],[tvw(1:3),dry.bypass.T,tvw(9)],'b-')
+% % plot([svw(end),svw(1)],[tvw(end),tvw(1)],'r--')
+% % text(svw,tvw+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
+% % text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
+% % ylabel('T [K]')
+% % xlabel('s, J/kg-K')
+% 
+% 
+% tvw = [ambient.T, engine.wet.diffuser.T, engine.wet.fan.T, engine.wet.lpc.T, engine.wet.hpc.T, engine.wet.combustor.T, engine.wet.hpt.T, engine.wet.lpt.T, engine.wet.mixer.T, engine.wet.afterburner.T, engine.wet.nozzle.T];
+% hvw = [ambient.h, engine.wet.diffuser.h, engine.wet.fan.h, engine.wet.lpc.h, engine.wet.hpc.h, engine.wet.combustor.h, engine.wet.hpt.h, engine.wet.lpt.h, engine.wet.mixer.h, engine.wet.afterburner.h, engine.wet.nozzle.h];
+% pvw = [ambient.p, engine.wet.diffuser.p, engine.wet.fan.p, engine.wet.lpc.p, engine.wet.hpc.p, engine.wet.combustor.p, engine.wet.hpt.p, engine.wet.lpt.p, engine.wet.mixer.p, engine.wet.afterburner.p, engine.wet.nozzle.p];
+% svw = zeros(size(tvw));
+% for ii = 1:length(tvw)
+%     svw(ii) = py.CoolProp.CoolProp.PropsSI('S','T',tvw(ii),'P',pvw(ii),'Air');
+% end
+% figure
+% tiledlayout(1,2,'TileSpacing','compact')
+% nexttile
+% plot(svw,tvw,'r*-')
+% hold on
+% plot([svw(1:3),py.CoolProp.CoolProp.PropsSI('S','T',wet.bypass.T,'P',wet.bypass.p,'Air'), svw(9)],[tvw(1:3),wet.bypass.T,tvw(9)],'b-')
+% plot([svw(end),svw(1)],[tvw(end),tvw(1)],'r--')
+% text(svw,tvw+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
+% text(py.CoolProp.CoolProp.PropsSI('S','T',wet.bypass.T,'P',wet.bypass.p,'Air'),wet.bypass.T+10,'BPD')
+% ylabel('T [K]')
+% xlabel('s, J/kg-K')
+% 
+% nexttile
+% plot(sv,tv,'r*-')
+% hold on
+% plot([sv(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), sv(9)],[tv(1:3),dry.bypass.T,tv(9)],'b-')
+% plot([sv(end),sv(1)],[tv(end),tv(1)],'r--')
+% text(sv,tv+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
+% text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
+% ylabel('T [K]')
+% xlabel('s, J/kg-K')
+
+% Normal outputs
+dmdt_dry = 150;
+dmdt_wet = 165;
+dmdt_f = [engine.dry.combustor.dmdt_f; engine.wet.combustor.dmdt_f+engine.wet.afterburner.dmdt_f];
+thrust = [
+    (dmdt_dry+engine.dry.combustor.dmdt_f)*engine.dry.nozzle.V-dmdt_dry*ambient.V+pi*d_10^2/4*(engine.dry.nozzle.p-ambient.p);
+    (dmdt_wet+engine.wet.combustor.dmdt_f+engine.wet.afterburner.dmdt_f)*engine.wet.nozzle.V-dmdt_wet*ambient.V+pi*1.15^2/4*(engine.wet.nozzle.p-ambient.p);
+]; % Thrust, N
+ST = thrust./[150; 165]; % Specific thrust, Ns/kg
+TSFC = dmdt_f./thrust; % Thrust-specific fuel consumption, kg/Ns
+DKE = (dmdt_f+[150;165]).*[engine.dry.nozzle.V^2;engine.wet.nozzle.V^2]./2-[150;ambient.dmdt].*ambient.V^2/2;
+P_dry = DKE(1) + (engine.dry.nozzle.p - ambient.p) * engine.dry.nozzle.V * pi*(d_10/2)^2;
+P_wet = DKE(2) + (engine.wet.nozzle.p - ambient.p) * engine.wet.nozzle.V * pi*(1.15/2)^2;
+eta_p = thrust.*ambient.V./[P_dry; P_wet];
+eta_th = [P_dry; P_wet] ./ [engine.dry.combustor.dmdt_f*1e3*LHV; engine.wet.combustor.dmdt_f*1e3*LHV+engine.wet.afterburner.dmdt_f*LHV*1e3];
+% eta_p = thrust.*ambient.V./DKE; % Propulsion efficiency, []
+eta_0 = eta_th.*eta_p; % Overall efficiency, []
+g=9.81;
+LD = 7; % Estimate of cruise lift to drag ratio, []
+s = LD*ambient.V/g./TSFC.*log(1.66)./1000; % Aircraft range, km
+% table(dmdt_f, thrust./1000, ST, TSFC, eta_th, eta_p, eta_0 , s,'VariableNames',{'dmdt_f, [kg/s]','Thrust [kN]','ST','TSFC','eta_th','eta_p','eta_0','s [km]'},'RowNames',{'No ABR','ABR'})
+
+% Save outputs
+ST_d(i,j,k,l,m,n,o) = ST(1);
+ST_w(i,j,k,l,m,n,o) = ST(2);
+TSFC_d(i,j,k,l,m,n,o) = TSFC(1);
+TSFC_w(i,j,k,l,m,n,o) = TSFC(2);
+eta_p_d(i,j,k,l,m,n,o) = eta_p(1);
+eta_p_w(i,j,k,l,m,n,o) = eta_p(2);
+eta_th_d(i,j,k,l,m,n,o) = eta_th(1);
+eta_th_w(i,j,k,l,m,n,o) = eta_th(2);
+eta_0_d(i,j,k,l,m,n,o) = eta_0(1);
+eta_0_w(i,j,k,l,m,n,o) = eta_0(2);
+dmdt_f_d(i,j,k,l,m,n,o) = dmdt_f(1);
+dmdt_f_w(i,j,k,l,m,n,o) = dmdt_f(2);
+s_d(i,j,k,l,m,n,o) = s(1);
+s_w(i,j,k,l,m,n,o) = s(2);
+thr_d(i,j,k,l,m,n,o) = thrust(1);
+thr_w(i,j,k,l,m,n,o) = thrust(2);
+nox_d(i,j,k,l,m,n,o) = engine.dry.combustor.NO;
+nox_w(i,j,k,l,m,n,o) = engine.wet.combustor.NO+engine.wet.afterburner.NO;
+co2e_d(i,j,k,l,m,n,o) = engine.dry.combustor.CO2e;
+co2e_w(i,j,k,l,m,n,o) = engine.wet.combustor.CO2e+engine.wet.afterburner.CO2e;
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+toc
+
+%% Results
+% [X,Y] = meshgrid(TIT,HPCPR);
+% figure
+% surf(X,Y, reshape(s_d(end,1,2,2,:,1,:),size(s_d,[5,7])))
+% figure
+% surf(X,Y, reshape(nox_d(end,1,2,2,:,1,:),size(s_d,[5,7])))
+
+% close all;
+% figure('Name','Dry eta_0 vs h&M')
+% plot(M, reshape(eta_0_d(:,:,2,2,2,1,2),size(eta_0_d,[1,2])))
+% xlabel('M')
+% ylabel("\eta_0")
+% legend('h=0','h=5000m','h=10000m','h=15000m')
+% title('ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2, TIT=2000K')
+% 
+% figure('Name','Dry TSFC & ST vs h & M')
+% plot(M, reshape(TSFC_d(:,:,2,2,2,1,2),size(eta_0_d,[1,2])))
+% xlabel('M')
+% ylabel('TSFC')
+% yyaxis right
+% plot(M, reshape(ST_d(:,:,2,2,2,1,2),size(eta_0_d,[1,2])))
+% ylabel('ST')
+% legend('h=0','h=5000m','h=10000m','h=15000m','h=0','h=5000m','h=10000m','h=15000m')
+% title('ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2, TIT=2000K')
+% 
+% figure('Name','Dry TSFC & ST vs TIT & M')
+% plot(M, reshape(TSFC_d(:,1,2,2,2,1,:),size(eta_0_d,[1,7])))
+% xlabel('M')
+% ylabel('TSFC')
+% yyaxis right
+% plot(M, reshape(ST_d(:,1,2,2,2,1,:),size(eta_0_d,[1,7])))
+% ylabel('ST')
+% legend('1750K','2000K','2250K','1750K','2000K','2250K')
+% title('h=0, ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2')
+% 
+% figure('Name',"Dry eta_0 vs TIT & M")
+% plot(M, reshape(eta_0_d(:,1,2,2,2,1,:),size(eta_0_d,[1,7])))
+% xlabel('M')
+% ylabel("\eta_0")
+% legend('1750K','2000K','2250K')
+% title('h=0, ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2')
+% 
+% figure('Name','Dry TSFC & ST vs HPC PR & LPC PR')
+% plot(HPCPR, reshape(TSFC_d(3,1,2,2,:,:,2),size(eta_0_d,[5,6])))
+% xlabel('HPC PR')
+% ylabel('TSFC')
+% yyaxis right
+% plot(HPCPR, reshape(ST_d(3,1,2,2,:,:,2),size(eta_0_d,[5,6])))
+% ylabel('ST')
+% legend("pr_{LPC}=1.2",'1.7','2.2','1.2','1.7','2.2')
+% title('M=0.5, h=0, ISADEV=0, BPR=0.5, TIT=2000K')
+% 
+% figure('Name','Dry CO2e & NOx vs h & M')
+% plot(M, reshape(co2e_d(:,:,2,2,2,1,2),size(eta_0_d,[1,2])))
+% xlabel('M')
+% ylabel('CO2e [kg/kg]')
+% yyaxis right
+% plot(M, reshape(nox_d(:,:,2,2,2,1,2),size(eta_0_d,[1,2])))
+% ylabel('NOx [kg/kg]')
+% legend('h=0','h=5000m','h=10000m','h=15000m','h=0','h=5000m','h=10000m','h=15000m')
+% title('ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2, TIT=2000K')
+% 
+% figure('Name','Dry CO2e & NOx vs TIT & M')
+% plot(M, reshape(co2e_d(:,1,2,2,2,1,:),size(eta_0_d,[1,7])))
+% xlabel('M')
+% ylabel('CO2e [kg/kg]')
+% yyaxis right
+% plot(M, reshape(nox_d(:,1,2,2,2,1,:),size(eta_0_d,[1,7])))
+% ylabel('NOx [kg/kg]')
+% legend('TIT=1750K','2000K','2250K','1750K','2000K','2250K')
+% title('h=0, ISADEV=0, BPR=0.5, HPCPR=12, LPCPR=1.2')
+
+% Outputs
+% ST + TSFC
+% eta_0 + eta_th + eta_p
+% NOx + CO2e
+
+% Inputs
+% M & BPR
+% M & TIT
+% M & h
+% % h & ISADEV
+% HPCPR & LPCPR
+% HPCPR & TIT @ M1, M2, M3, M4
+
+% for i = 1:length(M)
+% for j = 1:length(h)
+% for k = 1:length(ISADEV)
+% for l = 1:length(BPR)
+% for m = 1:length(HPCPR)
+% for n = 1:length(LPCPR)
+% for o = 1:length(TIT)
+
+% ST & TSFC vs HPCPR & TIT
+figure('Name','Dry ST + TSFC vs HPCR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+plot(HPCPR, reshape(TSFC_d(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_d(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("ST")
+ylim([900,1350])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(TSFC_d(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_d(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("ST")
+ylim([900,1350])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(TSFC_d(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_d(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("ST")
+ylim([900,1350])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(TSFC_d(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_d(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("ST")
+ylim([900,1350])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+% Efficiencies vs HPCPR & TIT
+figure('Name','Dry efficiencies vs HPCR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_d(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_d(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_d(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_d(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_d(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_d(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_d(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_d(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_d(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_d(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_d(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_d(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+% CO2e and NOx vs HPCPR & TIT
+figure('Name','Dry CO2e + NOx vs HPCR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+plot(HPCPR, reshape(co2e_d(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_d(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+ylim([2e-3,8e-3])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(co2e_d(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_d(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+ylim([2e-3,8e-3])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(co2e_d(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_d(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+ylim([2e-3,8e-3])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(co2e_d(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_d(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+ylim([2e-3,8e-3])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+% ST & TSFC vs BPR & TIT
+figure('Name','Dry ST + TSFC vs BPR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+plot(BPR, reshape(TSFC_d(1, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_d(1, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(BPR, reshape(TSFC_d(2, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_d(2, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(BPR, reshape(TSFC_d(3, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_d(3, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(BPR, reshape(TSFC_d(4, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_d(4, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+
+
+
+
+%% Wet Trends
+
+% ST & TSFC vs HPCPR & TIT
+figure('Name','Wet ST + TSFC vs HPCR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+plot(HPCPR, reshape(TSFC_w(1, 1, 2, 2, :, 1, :),size(TSFC_w,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_w(1, 1, 2, 2, :, 1, :),size(TSFC_w,[5, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(TSFC_w(2, 1, 2, 2, :, 1, :),size(TSFC_w,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_w(2, 1, 2, 2, :, 1, :),size(TSFC_w,[5, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(TSFC_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(TSFC_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+% Efficiencies vs HPCPR & TIT
+figure('Name','Wet efficiencies vs HPCR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_w(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_w(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_w(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_w(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_w(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_w(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+% CO2e and NOx vs HPCPR & TIT
+figure('Name','Wet CO2e + NOx vs HPCR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+plot(HPCPR, reshape(co2e_w(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+% ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_w(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+% ylim([2e-3,8e-3])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(co2e_w(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_w(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+ylim([2e-3,8e-3])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(co2e_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+% ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+% ylim([2e-3,8e-3])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(co2e_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+% ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+% ylim([2e-3,8e-3])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+% ST & TSFC vs BPR & TIT
+figure('Name','Wet ST + TSFC vs BPR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+plot(BPR, reshape(TSFC_w(1, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_w(1, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(BPR, reshape(TSFC_w(2, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_w(2, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(BPR, reshape(TSFC_w(3, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_w(3, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(BPR, reshape(TSFC_w(4, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_w(4, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
