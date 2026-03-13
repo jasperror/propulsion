@@ -614,21 +614,21 @@ R = 287;
 ISA = load('ISA.mat');
 ISA = ISA.ISA;
 
-% M=[0.1, 0.3, 0.5, 0.6];
-% h = 0:5000:15000;
-% ISADEV = -10:10:10;
-% BPR = 0:0.5:1.5;
-% HPCPR = 10:2:16;
-% LPCPR = 1.2:0.5:2.2;
-% TIT = 1750:250:2250;
+M=[0.1, 0.3, 0.5, 0.6];
+h = 0:5000:15000;
+ISADEV = -10:10:10;
+BPR = 0:0.5:1.5;
+HPCPR = 10:2:16;
+LPCPR = 1.2:0.5:2.2;
+TIT = 1750:250:2250;
 
-M = 0.5;
-h = 0;
-ISADEV = 0;
-BPR = 0.57;
-HPCPR = 12.8;
-LPCPR = 1.25;
-TIT = 2000;
+% M = 0.5;
+% h = 0;
+% ISADEV = 0;
+% BPR = 0.57;
+% HPCPR = 12.8;
+% LPCPR = 1.25;
+% TIT = 2000;
 
 N = length(M)*length(h)*length(ISADEV)*length(BPR)*length(HPCPR)*length(LPCPR)*length(TIT);
 count = 0;
@@ -713,52 +713,52 @@ engine.wet.nozzle = nozzle(engine.wet.afterburner, spr.NOZ,eta.NOZWET, pi*(0.92/
 % Difference between thrust (dry and wet) and published values
 
 % T-s diagram
-tv = [ambient.T, engine.dry.diffuser.T, engine.dry.fan.T, engine.dry.lpc.T, engine.dry.hpc.T, engine.dry.combustor.T, engine.dry.hpt.T, engine.dry.lpt.T, engine.dry.mixer.T, engine.dry.afterburner.T, engine.dry.nozzle.T];
-hv = [ambient.h, engine.dry.diffuser.h, engine.dry.fan.h, engine.dry.lpc.h, engine.dry.hpc.h, engine.dry.combustor.h, engine.dry.hpt.h, engine.dry.lpt.h, engine.dry.mixer.h, engine.dry.afterburner.h, engine.dry.nozzle.h];
-pv = [ambient.p, engine.dry.diffuser.p, engine.dry.fan.p, engine.dry.lpc.p, engine.dry.hpc.p, engine.dry.combustor.p, engine.dry.hpt.p, engine.dry.lpt.p, engine.dry.mixer.p, engine.dry.afterburner.p, engine.dry.nozzle.p];
-sv = zeros(size(tv));
-for ii = 1:length(tv)
-    sv(ii) = py.CoolProp.CoolProp.PropsSI('S','T',tv(ii),'P',pv(ii),'Air');
-end
+% tv = [ambient.T, engine.dry.diffuser.T, engine.dry.fan.T, engine.dry.lpc.T, engine.dry.hpc.T, engine.dry.combustor.T, engine.dry.hpt.T, engine.dry.lpt.T, engine.dry.mixer.T, engine.dry.afterburner.T, engine.dry.nozzle.T];
+% hv = [ambient.h, engine.dry.diffuser.h, engine.dry.fan.h, engine.dry.lpc.h, engine.dry.hpc.h, engine.dry.combustor.h, engine.dry.hpt.h, engine.dry.lpt.h, engine.dry.mixer.h, engine.dry.afterburner.h, engine.dry.nozzle.h];
+% pv = [ambient.p, engine.dry.diffuser.p, engine.dry.fan.p, engine.dry.lpc.p, engine.dry.hpc.p, engine.dry.combustor.p, engine.dry.hpt.p, engine.dry.lpt.p, engine.dry.mixer.p, engine.dry.afterburner.p, engine.dry.nozzle.p];
+% sv = zeros(size(tv));
+% for ii = 1:length(tv)
+%     sv(ii) = py.CoolProp.CoolProp.PropsSI('S','T',tv(ii),'P',pv(ii),'Air');
+% end
+% % figure
+% % plot(svw,tvw,'r*-')
+% % hold on
+% % plot([svw(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), svw(9)],[tvw(1:3),dry.bypass.T,tvw(9)],'b-')
+% % plot([svw(end),svw(1)],[tvw(end),tvw(1)],'r--')
+% % text(svw,tvw+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
+% % text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
+% % ylabel('T [K]')
+% % xlabel('s, J/kg-K')
+% 
+% 
+% tvw = [ambient.T, engine.wet.diffuser.T, engine.wet.fan.T, engine.wet.lpc.T, engine.wet.hpc.T, engine.wet.combustor.T, engine.wet.hpt.T, engine.wet.lpt.T, engine.wet.mixer.T, engine.wet.afterburner.T, engine.wet.nozzle.T];
+% hvw = [ambient.h, engine.wet.diffuser.h, engine.wet.fan.h, engine.wet.lpc.h, engine.wet.hpc.h, engine.wet.combustor.h, engine.wet.hpt.h, engine.wet.lpt.h, engine.wet.mixer.h, engine.wet.afterburner.h, engine.wet.nozzle.h];
+% pvw = [ambient.p, engine.wet.diffuser.p, engine.wet.fan.p, engine.wet.lpc.p, engine.wet.hpc.p, engine.wet.combustor.p, engine.wet.hpt.p, engine.wet.lpt.p, engine.wet.mixer.p, engine.wet.afterburner.p, engine.wet.nozzle.p];
+% svw = zeros(size(tvw));
+% for ii = 1:length(tvw)
+%     svw(ii) = py.CoolProp.CoolProp.PropsSI('S','T',tvw(ii),'P',pvw(ii),'Air');
+% end
 % figure
+% tiledlayout(1,2,'TileSpacing','compact')
+% nexttile
 % plot(svw,tvw,'r*-')
 % hold on
-% plot([svw(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), svw(9)],[tvw(1:3),dry.bypass.T,tvw(9)],'b-')
+% plot([svw(1:3),py.CoolProp.CoolProp.PropsSI('S','T',wet.bypass.T,'P',wet.bypass.p,'Air'), svw(9)],[tvw(1:3),wet.bypass.T,tvw(9)],'b-')
 % plot([svw(end),svw(1)],[tvw(end),tvw(1)],'r--')
 % text(svw,tvw+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
+% text(py.CoolProp.CoolProp.PropsSI('S','T',wet.bypass.T,'P',wet.bypass.p,'Air'),wet.bypass.T+10,'BPD')
+% ylabel('T [K]')
+% xlabel('s, J/kg-K')
+% 
+% nexttile
+% plot(sv,tv,'r*-')
+% hold on
+% plot([sv(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), sv(9)],[tv(1:3),dry.bypass.T,tv(9)],'b-')
+% plot([sv(end),sv(1)],[tv(end),tv(1)],'r--')
+% text(sv,tv+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
 % text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
 % ylabel('T [K]')
 % xlabel('s, J/kg-K')
-
-
-tvw = [ambient.T, engine.wet.diffuser.T, engine.wet.fan.T, engine.wet.lpc.T, engine.wet.hpc.T, engine.wet.combustor.T, engine.wet.hpt.T, engine.wet.lpt.T, engine.wet.mixer.T, engine.wet.afterburner.T, engine.wet.nozzle.T];
-hvw = [ambient.h, engine.wet.diffuser.h, engine.wet.fan.h, engine.wet.lpc.h, engine.wet.hpc.h, engine.wet.combustor.h, engine.wet.hpt.h, engine.wet.lpt.h, engine.wet.mixer.h, engine.wet.afterburner.h, engine.wet.nozzle.h];
-pvw = [ambient.p, engine.wet.diffuser.p, engine.wet.fan.p, engine.wet.lpc.p, engine.wet.hpc.p, engine.wet.combustor.p, engine.wet.hpt.p, engine.wet.lpt.p, engine.wet.mixer.p, engine.wet.afterburner.p, engine.wet.nozzle.p];
-svw = zeros(size(tvw));
-for ii = 1:length(tvw)
-    svw(ii) = py.CoolProp.CoolProp.PropsSI('S','T',tvw(ii),'P',pvw(ii),'Air');
-end
-figure
-tiledlayout(1,2,'TileSpacing','compact')
-nexttile
-plot(svw,tvw,'r*-')
-hold on
-plot([svw(1:3),py.CoolProp.CoolProp.PropsSI('S','T',wet.bypass.T,'P',wet.bypass.p,'Air'), svw(9)],[tvw(1:3),wet.bypass.T,tvw(9)],'b-')
-plot([svw(end),svw(1)],[tvw(end),tvw(1)],'r--')
-text(svw,tvw+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
-text(py.CoolProp.CoolProp.PropsSI('S','T',wet.bypass.T,'P',wet.bypass.p,'Air'),wet.bypass.T+10,'BPD')
-ylabel('T [K]')
-xlabel('s, J/kg-K')
-
-nexttile
-plot(sv,tv,'r*-')
-hold on
-plot([sv(1:3),py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'), sv(9)],[tv(1:3),dry.bypass.T,tv(9)],'b-')
-plot([sv(end),sv(1)],[tv(end),tv(1)],'r--')
-text(sv,tv+10, {'AMB','DIF','FAN','LPC','HPC','BNR','HPT','LPT','MIX','ABR','NOZ'})
-text(py.CoolProp.CoolProp.PropsSI('S','T',dry.bypass.T,'P',dry.bypass.p,'Air'),dry.bypass.T+10,'BPD')
-ylabel('T [K]')
-xlabel('s, J/kg-K')
 
 % Normal outputs
 dmdt_dry = 150;
@@ -771,7 +771,6 @@ thrust = [
 ST = thrust./[150; 165]; % Specific thrust, Ns/kg
 TSFC = dmdt_f./thrust; % Thrust-specific fuel consumption, kg/Ns
 DKE = (dmdt_f+[150;165]).*[engine.dry.nozzle.V^2;engine.wet.nozzle.V^2]./2-[150;ambient.dmdt].*ambient.V^2/2;
-% eta_th = DKE./[engine.dry.combustor.dmdt_f*1e3*LHV; engine.wet.combustor.dmdt_f*1e3*LHV+engine.wet.afterburner.dmdt_f*LHV*1e3];
 P_dry = DKE(1) + (engine.dry.nozzle.p - ambient.p) * engine.dry.nozzle.V * pi*(d_10/2)^2;
 P_wet = DKE(2) + (engine.wet.nozzle.p - ambient.p) * engine.wet.nozzle.V * pi*(1.15/2)^2;
 eta_p = thrust.*ambient.V./[P_dry; P_wet];
@@ -781,7 +780,7 @@ eta_0 = eta_th.*eta_p; % Overall efficiency, []
 g=9.81;
 LD = 7; % Estimate of cruise lift to drag ratio, []
 s = LD*ambient.V/g./TSFC.*log(1.66)./1000; % Aircraft range, km
-table(dmdt_f, thrust./1000, ST, TSFC, eta_th, eta_p, eta_0 , s,'VariableNames',{'dmdt_f, [kg/s]','Thrust [kN]','ST','TSFC','eta_th','eta_p','eta_0','s [km]'},'RowNames',{'No ABR','ABR'})
+% table(dmdt_f, thrust./1000, ST, TSFC, eta_th, eta_p, eta_0 , s,'VariableNames',{'dmdt_f, [kg/s]','Thrust [kN]','ST','TSFC','eta_th','eta_p','eta_0','s [km]'},'RowNames',{'No ABR','ABR'})
 
 % Save outputs
 ST_d(i,j,k,l,m,n,o) = ST(1);
@@ -905,7 +904,7 @@ toc
 % for m = 1:length(HPCPR)
 % for n = 1:length(LPCPR)
 % for o = 1:length(TIT)
-%{
+
 % ST & TSFC vs HPCPR & TIT
 figure('Name','Dry ST + TSFC vs HPCR & TIT @ Various M','Position',[0,0,800,600])
 tiledlayout(2,2,'TileSpacing','compact')
@@ -1014,11 +1013,11 @@ tiledlayout(2,2,'TileSpacing','compact')
 nexttile
 plot(HPCPR, reshape(co2e_d(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
 xlabel("pr_{HPC}")
-ylabel("CO_2e")
+ylabel("CO_2e [kg/kg]")
 ylim([0.02, 0.18])
 yyaxis right
 plot(HPCPR, reshape(nox_d(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
-ylabel("NOx")
+ylabel("NOx [kg/kg]")
 ylim([2e-3,8e-3])
 title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
 % legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
@@ -1026,11 +1025,11 @@ title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
 nexttile
 plot(HPCPR, reshape(co2e_d(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
 xlabel("pr_{HPC}")
-ylabel("CO_2e")
+ylabel("CO_2e [kg/kg]")
 ylim([0.02, 0.18])
 yyaxis right
 plot(HPCPR, reshape(nox_d(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
-ylabel("NOx")
+ylabel("NOx [kg/kg]")
 ylim([2e-3,8e-3])
 title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
 % legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
@@ -1038,11 +1037,11 @@ title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
 nexttile
 plot(HPCPR, reshape(co2e_d(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
 xlabel("pr_{HPC}")
-ylabel("CO_2e")
+ylabel("CO_2e [kg/kg]")
 ylim([0.02, 0.18])
 yyaxis right
 plot(HPCPR, reshape(nox_d(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
-ylabel("NOx")
+ylabel("NOx [kg/kg]")
 ylim([2e-3,8e-3])
 title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
 % legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
@@ -1050,11 +1049,11 @@ title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
 nexttile
 plot(HPCPR, reshape(co2e_d(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
 xlabel("pr_{HPC}")
-ylabel("CO_2e")
+ylabel("CO_2e [kg/kg]")
 ylim([0.02, 0.18])
 yyaxis right
 plot(HPCPR, reshape(nox_d(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
-ylabel("NOx")
+ylabel("NOx [kg/kg]")
 ylim([2e-3,8e-3])
 title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
 legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
@@ -1109,4 +1108,213 @@ ylabel("ST")
 % ylim([900,1350])
 title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
 legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
-%}
+
+
+
+
+
+%% Wet Trends
+
+% ST & TSFC vs HPCPR & TIT
+figure('Name','Wet ST + TSFC vs HPCR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+plot(HPCPR, reshape(TSFC_w(1, 1, 2, 2, :, 1, :),size(TSFC_w,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_w(1, 1, 2, 2, :, 1, :),size(TSFC_w,[5, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(TSFC_w(2, 1, 2, 2, :, 1, :),size(TSFC_w,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_w(2, 1, 2, 2, :, 1, :),size(TSFC_w,[5, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(TSFC_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(TSFC_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(HPCPR, reshape(ST_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+% Efficiencies vs HPCPR & TIT
+figure('Name','Wet efficiencies vs HPCR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_w(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_w(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_w(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_w(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_w(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_w(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+nexttile
+hold on
+plot(HPCPR, reshape(eta_0_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_th_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+plot(HPCPR, reshape(eta_p_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+hold off
+xlabel("pr_{HPC}")
+ylabel("\eta")
+ylim([0, 1])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("\eta_0 T_{ad}=1750K","\eta_0 2000K","\eta_0 2250K","\eta_{th} 1750K","\eta_{th} 2000K","\eta_{th} 2250K","\eta_p 1750K","\eta_p 2000K","\eta_p 2250K")
+
+% CO2e and NOx vs HPCPR & TIT
+figure('Name','Wet CO2e + NOx vs HPCR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+plot(HPCPR, reshape(co2e_w(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+% ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_w(1, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+% ylim([2e-3,8e-3])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(co2e_w(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_w(2, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+ylim([2e-3,8e-3])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(co2e_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+% ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_w(3, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+% ylim([2e-3,8e-3])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(HPCPR, reshape(co2e_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+xlabel("pr_{HPC}")
+ylabel("CO_2e [kg/kg]")
+% ylim([0.02, 0.18])
+yyaxis right
+plot(HPCPR, reshape(nox_w(4, 1, 2, 2, :, 1, :),size(TSFC_d,[5, 7])))
+ylabel("NOx [kg/kg]")
+% ylim([2e-3,8e-3])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+% ST & TSFC vs BPR & TIT
+figure('Name','Wet ST + TSFC vs BPR & TIT @ Various M','Position',[0,0,800,600])
+tiledlayout(2,2,'TileSpacing','compact')
+nexttile
+plot(BPR, reshape(TSFC_w(1, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_w(1, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.1, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(BPR, reshape(TSFC_w(2, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_w(2, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.3, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(BPR, reshape(TSFC_w(3, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_w(3, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.5, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+% legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
+
+nexttile
+plot(BPR, reshape(TSFC_w(4, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+xlabel("BPR")
+ylabel("TSFC")
+% ylim([1.6e-5, 2.6e-5])
+yyaxis right
+plot(BPR, reshape(ST_w(4, 1, 2, :, 2, 1, :),size(TSFC_d,[4, 7])))
+ylabel("ST")
+% ylim([900,1350])
+title("M=0.6, h=0, ISADEV=0, BPR=0.5, pr_{LPC}=1.2")
+legend("T_{ad}=1750K",'2000K','2250K',"1750K",'2000K','2250K')
